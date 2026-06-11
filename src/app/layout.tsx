@@ -5,7 +5,6 @@ import { Toaster } from 'react-hot-toast'
 
 const inter = Inter({ subsets: ['latin'] })
 
-// ✨ UPGRADED: PWA Metadata
 export const metadata: Metadata = {
   title: 'Noubba | File d\'attente intelligente',
   description: 'Le 1er système de file d\'attente WhatsApp au Maroc',
@@ -17,7 +16,6 @@ export const metadata: Metadata = {
   },
 }
 
-// ✨ UPGRADED: Set the App Theme Color
 export const viewport: Viewport = {
   themeColor: '#0f172a',
   width: 'device-width',
@@ -35,6 +33,26 @@ export default function RootLayout({
       <body className={inter.className}>
         <Toaster position="top-center" />
         {children}
+        
+        {/* ✨ MAGIC: Register the Service Worker for Native App Install */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js').then(
+                    function(registration) {
+                      console.log('ServiceWorker registration successful');
+                    },
+                    function(err) {
+                      console.log('ServiceWorker registration failed: ', err);
+                    }
+                  );
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   )

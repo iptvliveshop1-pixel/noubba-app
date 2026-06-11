@@ -3,6 +3,7 @@
   "short_name": "Noubba",
   "description": "Le 1er système de file d'attente WhatsApp au Maroc",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#0f172a",

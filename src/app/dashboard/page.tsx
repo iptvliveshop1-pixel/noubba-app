@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, QrCode, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save } from 'lucide-react';
+import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, QrCode, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Smartphone, Store, User, ArrowRight } from 'lucide-react';
 
 type Customer = {
   id: string;
@@ -16,6 +16,14 @@ export default function Dashboard() {
   const [queue, setQueue] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isApproved, setIsApproved] = useState(false);
+  
+  // ✨ NEW: State for Google Users who need to complete their profile
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [onboardShopName, setOnboardShopName] = useState('');
+  const [onboardOwnerName, setOnboardOwnerName] = useState('');
+  const [isOnboarding, setIsOnboarding] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+
   const [isSendingAuth, setIsSendingAuth] = useState<string | null>(null); 
   const [shopName, setShopName] = useState<string>(''); 
   const [ownerName, setOwnerName] = useState<string>(''); 
@@ -47,10 +55,19 @@ export default function Dashboard() {
         window.location.href = '/login';
         return;
       }
+      
+      setUserId(session.user.id);
 
       const { data: barber } = await supabase.from('barbers').select('*').eq('user_id', session.user.id).single();
 
-      if (!barber || barber.approval_status === 'pending') {
+      // ✨ NEW: If they logged in with Google but have no salon profile yet
+      if (!barber) {
+        setNeedsOnboarding(true);
+        setIsLoading(false);
+        return;
+      }
+
+      if (barber.approval_status === 'pending') {
         setIsApproved(false);
         setIsLoading(false);
         return;
@@ -76,6 +93,29 @@ export default function Dashboard() {
     };
     checkAuthAndFetchQueue();
   }, []);
+
+  // ✨ NEW: Handle the Google User Onboarding Form
+  const handleCompleteOnboarding = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userId) return;
+    setIsOnboarding(true);
+    const toastId = toast.loading("Création de votre salon...");
+
+    const { error } = await supabase.from('barbers').insert([{
+      user_id: userId,
+      shop_name: onboardShopName,
+      owner_name: onboardOwnerName,
+      approval_status: 'pending'
+    }]);
+
+    if (error) {
+      toast.error("Erreur lors de la création.", { id: toastId });
+    } else {
+      toast.success("Profil complété !", { id: toastId });
+      setNeedsOnboarding(false); // Move them to the "Pending" screen
+    }
+    setIsOnboarding(false);
+  };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
@@ -292,15 +332,55 @@ export default function Dashboard() {
     }
   };
 
-  if (!isLoading && !isApproved) {
+  // ✨ NEW: Google Onboarding Screen
+  if (!isLoading && needsOnboarding) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 text-center">
-        <div className="bg-white p-10 rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] border border-slate-100 max-w-md w-full animate-in fade-in duration-500">
-          <h2 className="text-2xl font-extrabold text-amber-600 mb-4 flex items-center justify-center gap-3 tracking-tight">
-            Compte en attente <Coffee className="w-6 h-6 animate-bounce" />
-          </h2>
-          <p className="text-slate-500 mb-8 leading-relaxed font-medium">Votre compte est en cours d'activation par l'administrateur. Veuillez revenir plus tard.</p>
-          <button onClick={handleLogout} className="w-full py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+      <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans">
+        <div className="h-[30vh] w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black"></div>
+          <div className="relative z-10 mt-4">
+            <h1 className="text-3xl font-black text-white tracking-tight leading-none mb-2">Bienvenue !</h1>
+            <p className="text-slate-400 font-medium text-sm">Complétez votre profil pour ouvrir votre salon.</p>
+          </div>
+        </div>
+        <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-6 pt-10 pb-32 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
+          <form id="onboard-form" onSubmit={handleCompleteOnboarding} className="space-y-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all shadow-sm flex items-center gap-4">
+              <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center shrink-0"><Store className="w-5 h-5 text-slate-400" /></div>
+              <div className="flex-1">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Nom du Salon</label>
+                <input type="text" required value={onboardShopName} onChange={(e) => setOnboardShopName(e.target.value)} className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-900 placeholder-slate-300 focus:ring-0 outline-none" placeholder="Barber Pro" />
+              </div>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all shadow-sm flex items-center gap-4">
+              <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center shrink-0"><User className="w-5 h-5 text-slate-400" /></div>
+              <div className="flex-1">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Votre Prénom</label>
+                <input type="text" required value={onboardOwnerName} onChange={(e) => setOnboardOwnerName(e.target.value)} className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-900 placeholder-slate-300 focus:ring-0 outline-none" placeholder="Tariq" />
+              </div>
+            </div>
+          </form>
+        </div>
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-slate-100 z-50 pb-8 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
+          <button type="submit" form="onboard-form" disabled={isOnboarding} className="w-full h-16 bg-amber-500 active:bg-amber-400 disabled:bg-slate-300 text-slate-900 font-black rounded-2xl transition-colors text-lg flex justify-center items-center gap-2">
+            {isOnboarding ? <div className="w-5 h-5 border-2 border-slate-900/30 border-t-slate-900 rounded-full animate-spin"></div> : <>Terminer <ArrowRight className="w-5 h-5" /></>}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isLoading && !isApproved && !needsOnboarding) {
+    return (
+      <div className="min-h-[100dvh] bg-slate-900 flex items-center justify-center p-6 text-center selection:bg-amber-500/30">
+        <div className="bg-slate-800 p-10 rounded-[2.5rem] shadow-2xl border border-slate-700 max-w-md w-full animate-in fade-in zoom-in-95 duration-500 relative overflow-hidden">
+          <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-500 to-amber-300"></div>
+          <div className="w-20 h-20 bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+            <Coffee className="w-10 h-10 text-amber-500 animate-pulse" />
+          </div>
+          <h2 className="text-2xl font-black text-white mb-2 tracking-tight">Compte en attente</h2>
+          <p className="text-slate-400 mb-8 font-medium">Votre compte est en cours d'activation par l'administrateur. Veuillez revenir plus tard.</p>
+          <button onClick={handleLogout} className="w-full py-4 bg-slate-700 hover:bg-slate-600 text-white rounded-2xl font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2">
             <LogOut className="w-4 h-4" /> Se déconnecter
           </button>
         </div>
@@ -309,167 +389,193 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 sm:p-8 font-sans text-slate-900 pb-32 selection:bg-amber-200 relative">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-amber-200">
+      
+      {/* NATIVE HERO SECTION (Edge to Edge) */}
+      <div className="h-[28vh] w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black"></div>
         
-        {/* HEADER */}
-        <div className="mb-8 flex justify-between items-center bg-white/80 backdrop-blur-xl p-5 sm:p-6 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/50 sticky top-4 z-40">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-              Dashboard {shopName ? <span className="text-amber-500 flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-amber-500 hidden sm:block"></span>{shopName}</span> : ''}
-            </h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={toggleShopStatus}
-              disabled={isToggling}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold transition-all duration-300 shadow-sm active:scale-95 ${
-                isOpen ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'
-              }`}
-            >
-              <Power className={`w-4 h-4 ${isOpen ? 'text-emerald-500' : 'text-slate-400'}`} />
-              <span className="hidden sm:inline">{isOpen ? 'Ouvert' : 'Fermé'}</span>
-            </button>
-            <div className="w-px h-8 bg-slate-200 hidden sm:block"></div>
-            <button onClick={handleLogout} className="flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-500 hover:text-red-600 bg-slate-50 hover:bg-red-50 px-5 py-3 rounded-xl transition-all hover:shadow-sm active:scale-95">
-              <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">Quitter</span>
-            </button>
-          </div>
-        </div>
-
-        {/* FILE D'ATTENTE (QUEUE) */}
-        <div className="flex justify-between items-end mb-6 px-2">
-          <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">File d'attente</h2>
-          <button onClick={() => setShowWalkInModal(true)} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 px-5 rounded-xl transition-all shadow-md active:scale-95 text-sm sm:text-base">
-            <UserPlus className="w-4 h-4 text-amber-400" /> <span className="hidden sm:inline">Ajouter </span>Sur place
+        {/* Floating Actions Top */}
+        <div className="absolute top-0 w-full left-0 px-6 py-6 flex justify-between items-center z-20">
+          <button 
+            onClick={toggleShopStatus}
+            disabled={isToggling}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold text-xs sm:text-sm transition-all shadow-sm active:scale-95 backdrop-blur-md ${
+              isOpen ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/10 text-slate-300 border border-white/20'
+            }`}
+          >
+            <Power className="w-4 h-4" /> {isOpen ? 'Salon Ouvert' : 'Salon Fermé'}
+          </button>
+          
+          <button onClick={handleLogout} className="w-10 h-10 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-slate-300 hover:text-white active:scale-95 transition-all backdrop-blur-md">
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
 
+        <div className="relative z-10 mt-8 flex items-center gap-4">
+          {profileImage ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src={profileImage} alt="Profile" className="w-16 h-16 rounded-full object-cover border-2 border-white/20 shadow-lg" />
+          ) : (
+            <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center border-2 border-white/20 shadow-lg">
+              <span className="text-2xl font-black text-amber-500">{shopName.charAt(0)}</span>
+            </div>
+          )}
+          <div>
+            <h1 className="text-3xl font-black text-white tracking-tight leading-none mb-1">Bonjour, {ownerName.split(' ')[0]}</h1>
+            <p className="text-slate-400 font-medium text-sm">{shopName}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* OVERLAPPING BOTTOM SHEET */}
+      <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-8 pb-32 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
+
+        {/* Queue Header */}
+        <div className="flex justify-between items-end mb-6 px-2">
+          <div>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">File d'attente</h2>
+            <p className="text-sm font-bold text-amber-600 mt-1">{queue.length} personne(s) en attente</p>
+          </div>
+        </div>
+
+        {/* Queue List */}
         {isLoading ? (
           <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col md:flex-row justify-between items-start md:items-center gap-5 animate-pulse">
-                <div className="w-full md:w-1/3">
-                  <div className="h-3 bg-slate-200 rounded-full w-24 mb-4"></div>
-                  <div className="h-7 bg-slate-200 rounded-lg w-48 mb-3"></div>
-                </div>
-              </div>
+            {[1, 2].map((i) => (
+              <div key={i} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm animate-pulse h-32 w-full"></div>
             ))}
           </div>
         ) : queue.length === 0 ? (
-          <div className="bg-white p-16 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 text-center animate-in zoom-in-95 duration-500">
-            <div className="w-24 h-24 bg-slate-50 border border-slate-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Coffee className="w-10 h-10 text-amber-500" />
+          <div className="bg-white p-12 rounded-[2rem] shadow-sm border border-slate-100 text-center">
+            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Coffee className="w-8 h-8 text-slate-300" />
             </div>
-            <h3 className="text-2xl font-extrabold text-slate-900 mb-2 tracking-tight">La file est vide</h3>
-            <p className="text-slate-500 font-medium">Partagez votre QR code pour attirer des clients !</p>
+            <h3 className="text-xl font-bold text-slate-900 mb-1">La file est vide</h3>
+            <p className="text-sm text-slate-500 font-medium">En attente de clients...</p>
           </div>
         ) : (
           <div className="space-y-4">
             {queue.map((customer, index) => (
-              <div key={customer.id} className="bg-white p-6 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] border border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center transition-all duration-300 hover:-translate-y-1 gap-5">
-                <div className="w-full md:w-auto">
-                  <div className="flex justify-between items-center md:block mb-2">
-                    <p className="text-xs font-black text-amber-500 uppercase tracking-widest bg-amber-50 w-fit px-3 py-1 rounded-full">Position #{index + 1}</p>
+              <div key={customer.id} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col gap-4">
+                
+                {/* Customer Info Row */}
+                <div className="flex justify-between items-start">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center shrink-0 border border-amber-100/50">
+                      <span className="text-amber-600 font-black text-lg">#{index + 1}</span>
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900 capitalize leading-tight">{customer.customer_name}</h3>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        {customer.whatsapp_number === 'Sur place' ? (
+                          <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider">Sur Place</span>
+                        ) : (
+                          <>
+                            <Smartphone className="w-3 h-3 text-slate-400" />
+                            <span className="text-slate-500 font-mono text-xs font-medium">{customer.whatsapp_number}</span>
+                          </>
+                        )}
+                        {customer.notified && <span className="ml-1 flex items-center text-[10px] font-bold text-emerald-600"><CheckCircle2 className="w-3 h-3 mr-0.5" /> Notifié</span>}
+                      </div>
+                    </div>
                   </div>
-                  <h3 className="text-2xl font-extrabold text-slate-900 capitalize tracking-tight">{customer.customer_name}</h3>
-                  <p className="text-slate-500 mt-1.5 font-mono text-sm font-medium">
-                    {customer.whatsapp_number === 'Sur place' ? (
-                      <span className="inline-block bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-bold text-xs uppercase tracking-wider">Client au salon</span>
-                    ) : (customer.whatsapp_number)}
-                  </p>
-                  {customer.notified && <span className="hidden md:flex items-center gap-1.5 mt-4 w-fit text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-full"><CheckCircle2 className="w-4 h-4" /> Message envoyé</span>}
                 </div>
 
-                <div className="grid grid-cols-2 md:flex gap-3 w-full md:w-auto mt-4 md:mt-0">
+                {/* Thumb-friendly Action Buttons */}
+                <div className="flex flex-col gap-2 w-full mt-1">
                   {customer.whatsapp_number !== 'Sur place' && (
-                    <button onClick={() => handleNotify(customer)} disabled={isSendingAuth === customer.id} className="col-span-2 md:col-span-1 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 px-6 rounded-2xl transition-all active:scale-[0.98] shadow-lg shadow-slate-900/20 disabled:opacity-50 text-sm sm:text-base h-14">
-                      {isSendingAuth === customer.id ? (<span className="flex items-center gap-2"><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div></span>) : (<><Bell className="w-4 h-4 text-amber-400" /> Alerter Client</>)}
+                    <button 
+                      onClick={() => handleNotify(customer)} 
+                      disabled={isSendingAuth === customer.id} 
+                      className="w-full h-12 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all active:scale-[0.98] disabled:opacity-50 text-sm"
+                    >
+                      {isSendingAuth === customer.id ? (
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      ) : (
+                        <><Bell className="w-4 h-4 text-amber-400" /> Alerter sur WhatsApp</>
+                      )}
                     </button>
                   )}
-                  <button onClick={() => handleCancel(customer.id)} className="col-span-1 flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold py-4 px-4 rounded-2xl transition-all active:scale-[0.98] text-sm sm:text-base h-14 border border-slate-200">
-                    <UserX className="w-4 h-4" /> Absent
-                  </button>
-                  <button onClick={() => handleComplete(customer.id)} className="col-span-1 flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 px-4 rounded-2xl transition-all active:scale-[0.98] shadow-lg shadow-emerald-500/20 text-sm sm:text-base h-14">
-                    <Check className="w-5 h-5" /> Terminé
-                  </button>
+                  <div className="flex gap-2 w-full">
+                    <button onClick={() => handleComplete(customer.id)} className="flex-1 h-12 flex items-center justify-center gap-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-bold rounded-xl transition-all active:scale-[0.98] text-sm">
+                      <Check className="w-4 h-4" /> Terminé
+                    </button>
+                    <button onClick={() => handleCancel(customer.id)} className="flex-1 h-12 flex items-center justify-center gap-2 bg-slate-50 text-slate-500 hover:bg-slate-100 font-bold rounded-xl transition-all active:scale-[0.98] text-sm border border-slate-100">
+                      <UserX className="w-4 h-4" /> Absent
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* OUTILS & PARAMÈTRES */}
-        <div className="mt-20 pt-10 border-t border-slate-200">
-          <div className="mb-8">
-            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-              <Settings className="w-6 h-6 text-slate-400" /> Outils du Salon
-            </h2>
-            <p className="text-slate-500 font-medium mt-1">Gérez votre profil public et votre affiche QR.</p>
-          </div>
+        {/* NATIVE SETTINGS SECTION */}
+        <div className="mt-12 pt-8 border-t border-slate-200/60">
+          <h2 className="text-xl font-black text-slate-900 mb-4 tracking-tight flex items-center gap-2">
+            <Settings className="w-5 h-5 text-slate-400" /> Outils du Salon
+          </h2>
 
-          <div className="mb-6 bg-white p-6 sm:p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 transition-all hover:shadow-lg">
-            <form onSubmit={handleUpdateProfile} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">Photo du salon</label>
-                  <div className="relative border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:bg-slate-50 transition-colors h-[88px] flex items-center justify-center overflow-hidden">
-                    <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploadingImage} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                    <div className="flex items-center gap-3">
-                      {profileImage ? (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={profileImage} alt="Salon" className="w-12 h-12 rounded-lg object-cover shadow-sm border border-slate-100" />
-                      ) : (<UploadCloud className="w-6 h-6 text-amber-500" />)}
-                      <span className="text-sm font-bold text-slate-600">
-                        {uploadingImage ? 'Téléchargement...' : profileImage ? 'Changer la photo' : 'Cliquez pour uploader'}
-                      </span>
-                    </div>
-                  </div>
+          <div className="bg-white p-5 sm:p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6">
+            <form onSubmit={handleUpdateProfile} className="space-y-4">
+              
+              {/* Native Input: Image */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all relative overflow-hidden flex items-center gap-4">
+                <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploadingImage} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm shrink-0">
+                  {profileImage ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={profileImage} alt="Salon" className="w-full h-full rounded-xl object-cover" />
+                  ) : (
+                    <UploadCloud className="w-5 h-5 text-amber-500" />
+                  )}
                 </div>
                 <div>
-                  {/* ✨ UPGRADED: Explicitly asking for a Google Maps Link */}
-                  <label className="block text-sm font-bold text-slate-700 mb-2">Lien Google Maps du salon</label>
-                  <div className="relative h-[88px] flex items-center">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                      <MapPin className="w-4 h-4 text-slate-400" />
-                    </div>
-                    <input type="url" value={location} onChange={(e)=>setLocation(e.target.value)} placeholder="ex: https://maps.app.goo.gl/..." className="w-full pl-11 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all text-sm" />
-                  </div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Photo Profil</label>
+                  <p className="text-sm font-bold text-slate-900">{uploadingImage ? 'Téléchargement...' : 'Appuyez pour modifier'}</p>
                 </div>
               </div>
-              <div className="flex justify-end pt-2">
-                <button type="submit" disabled={isSavingProfile} className="bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-6 rounded-xl transition-all shadow-md active:scale-95 text-sm flex items-center gap-2 disabled:opacity-70">
-                  <Save className="w-4 h-4 text-amber-400" /> {isSavingProfile ? 'Enregistrement...' : "Enregistrer le lien"}
-                </button>
+
+              {/* Native Input: Maps */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Lien Google Maps</label>
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
+                  <input type="url" value={location} onChange={(e)=>setLocation(e.target.value)} placeholder="http://maps.google.com/..." className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-900 placeholder-slate-400 focus:ring-0 outline-none" />
+                </div>
               </div>
+
+              <button type="submit" disabled={isSavingProfile} className="w-full h-12 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-70 mt-2">
+                <Save className="w-4 h-4 text-amber-400" /> Enregistrer les infos
+              </button>
             </form>
           </div>
 
+          {/* NATIVE VIP POSTER CARD */}
           {!isLoading && shareLink && (
-            <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 sm:p-8 rounded-[2rem] shadow-[0_20px_40px_-15px_rgba(0,0,0,0.3)] flex flex-col sm:flex-row items-center gap-8 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
-              <div className="bg-white p-3 rounded-3xl shadow-2xl shrink-0 z-10 transform group-hover:scale-105 transition-transform duration-500">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={qrCodeUrl} alt="QR Code" className="w-28 h-28 sm:w-32 sm:h-32 rounded-xl" crossOrigin="anonymous" />
+            <div className="bg-slate-900 p-6 rounded-[2rem] shadow-xl relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
+              
+              <div className="flex items-center gap-5 relative z-10 mb-6">
+                <div className="bg-white p-2 rounded-2xl shadow-lg shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={qrCodeUrl} alt="QR Code" className="w-20 h-20 rounded-xl" crossOrigin="anonymous" />
+                </div>
+                <div>
+                  <h3 className="text-white font-black text-lg">Affiche QR Code</h3>
+                  <p className="text-slate-400 text-xs font-medium mt-0.5">Pour vos clients au salon</p>
+                </div>
               </div>
-              <div className="flex-1 w-full text-center sm:text-left z-10">
-                <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
-                  <div>
-                    <h2 className="text-xl sm:text-2xl font-extrabold text-white flex items-center justify-center sm:justify-start gap-2 tracking-tight">
-                      <QrCode className="w-6 h-6 text-amber-400" /> Affiche QR Code
-                    </h2>
-                    <p className="text-slate-400 text-sm font-medium mt-1">Imprimez ce code et placez-le dans votre salon.</p>
-                  </div>
-                  <button onClick={downloadQR} className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold py-3 px-5 rounded-xl transition-all backdrop-blur-md active:scale-[0.98] shrink-0 text-sm">
-                    <Download className="w-4 h-4" /> Télécharger l'Affiche
-                  </button>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-3 w-full">
-                  <input type="text" readOnly value={shareLink} className="w-full bg-white/5 border border-white/10 text-white px-5 py-4 rounded-2xl outline-none font-mono text-sm text-center sm:text-left backdrop-blur-md" />
-                  <button onClick={() => copyToClipboard(shareLink)} className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-slate-900 font-extrabold py-4 px-8 rounded-2xl transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)] active:scale-[0.98] shrink-0">
-                    {copied ? <><Check className="w-5 h-5" /> Copié</> : <><Copy className="w-5 h-5" /> Copier</>}
-                  </button>
-                </div>
+
+              <div className="relative z-10 flex flex-col gap-3">
+                <button onClick={downloadQR} className="w-full h-12 bg-amber-500 active:bg-amber-400 text-slate-900 font-black rounded-xl transition-all flex items-center justify-center gap-2">
+                  <Download className="w-4 h-4" /> Télécharger l'Affiche
+                </button>
+                <button onClick={() => copyToClipboard(shareLink)} className="w-full h-12 bg-white/10 active:bg-white/20 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-white/10">
+                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-amber-400" />}
+                  {copied ? 'Lien Copié !' : 'Copier le lien direct'}
+                </button>
               </div>
             </div>
           )}
@@ -477,19 +583,24 @@ export default function Dashboard() {
 
         {/* Walk-in Modal */}
         {showWalkInModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-[2rem] w-full max-w-sm p-8 shadow-2xl relative animate-in zoom-in-95 duration-300">
-              <button onClick={() => setShowWalkInModal(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-700 transition-colors">
-                <X className="w-6 h-6" />
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-t-[2rem] sm:rounded-[2rem] w-full max-w-sm p-6 sm:p-8 shadow-2xl relative animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300">
+              <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6 sm:hidden"></div>
+              <button onClick={() => setShowWalkInModal(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-700 bg-slate-100 p-2 rounded-full transition-colors">
+                <X className="w-5 h-5" />
               </button>
-              <div className="w-14 h-14 bg-amber-50 text-amber-500 flex items-center justify-center rounded-2xl mb-6 shadow-sm border border-amber-100">
+              <div className="w-14 h-14 bg-slate-900 text-amber-400 flex items-center justify-center rounded-2xl mb-4 shadow-sm">
                 <UserPlus className="w-7 h-7" />
               </div>
-              <h3 className="text-2xl font-extrabold text-slate-900 mb-2 tracking-tight">Ajouter un client</h3>
-              <p className="text-slate-500 font-medium mb-6">Ajoutez rapidement une personne présente dans votre salon.</p>
+              <h3 className="text-2xl font-black text-slate-900 mb-1 tracking-tight">Ajouter sur place</h3>
+              <p className="text-slate-500 font-medium text-sm mb-6">Ajoutez rapidement une personne au salon.</p>
+              
               <form onSubmit={handleAddWalkIn}>
-                <input type="text" autoFocus required value={walkInName} onChange={(e) => setWalkInName(e.target.value)} className="w-full px-5 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 focus:bg-white focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all duration-300 text-base font-medium mb-6" placeholder="Prénom (ex: Karim)" />
-                <button type="submit" disabled={isAddingWalkIn || !walkInName.trim()} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-2xl transition-all shadow-[0_10px_30px_-10px_rgba(0,0,0,0.3)] active:scale-[0.98] disabled:opacity-50 text-lg">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all mb-6">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Prénom du client</label>
+                  <input type="text" autoFocus required value={walkInName} onChange={(e) => setWalkInName(e.target.value)} className="w-full bg-transparent border-none p-0 text-lg font-bold text-slate-900 placeholder-slate-300 focus:ring-0 outline-none" placeholder="Ex: Karim" />
+                </div>
+                <button type="submit" disabled={isAddingWalkIn || !walkInName.trim()} className="w-full h-14 bg-amber-500 active:bg-amber-400 text-slate-900 font-black rounded-2xl transition-all shadow-[0_10px_20px_-10px_rgba(245,158,11,0.5)] disabled:opacity-50 text-lg flex items-center justify-center gap-2">
                   {isAddingWalkIn ? 'Ajout...' : 'Ajouter à la file'}
                 </button>
               </form>
@@ -497,6 +608,17 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* STICKY BOTTOM ACTION BAR */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-slate-100 z-40 pb-8 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
+        <button 
+          onClick={() => setShowWalkInModal(true)}
+          className="w-full h-16 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-2xl transition-colors text-lg flex items-center justify-center gap-3 shadow-lg shadow-slate-900/20"
+        >
+          <UserPlus className="w-5 h-5 text-amber-400" /> Ajouter Sur Place
+        </button>
+      </div>
+
     </div>
   );
 }
