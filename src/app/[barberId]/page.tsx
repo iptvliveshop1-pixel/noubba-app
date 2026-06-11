@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useParams } from 'next/navigation';
 import { toast } from 'react-hot-toast'; 
-import { CheckCircle2, Users, Check, Scissors, Clock, MapPin } from 'lucide-react';
+import { CheckCircle2, Users, Check, Scissors, Clock, MapPin, Download } from 'lucide-react';
 
 export default function CustomerCheckIn() {
   const params = useParams();
@@ -16,8 +16,23 @@ export default function CustomerCheckIn() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  
+  // PWA Install State
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [isIOS, setIsIOS] = useState(false);
 
   useEffect(() => {
+    // Detect iOS for install instructions
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    if (/iphone|ipad|ipod/.test(userAgent)) {
+      setIsIOS(true);
+    }
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
     const fetchBarberAndQueue = async () => {
       const { data: barber, error: barberError } = await supabase
         .from('barbers')
@@ -44,7 +59,23 @@ export default function CustomerCheckIn() {
     if (rawBarberId) {
       fetchBarberAndQueue();
     }
+    
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, [rawBarberId]);
+
+  const handleInstallClick = async () => {
+    if (installPrompt) {
+      installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      if (outcome === 'accepted') setInstallPrompt(null);
+    } else if (isIOS) {
+      toast("Sur iPhone : Appuyez sur l'icône Partager ⬆️ au milieu en bas, puis sur « Sur l'écran d'accueil ».", {
+        icon: '📱', duration: 6000, style: { borderRadius: '12px', background: '#333', color: '#fff' }
+      });
+    } else {
+      toast.success("L'application est déjà installée !", { style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,9 +84,7 @@ export default function CustomerCheckIn() {
     const cleanNumber = whatsappNumber.replace(/\s+/g, '');
     
     if (cleanNumber.length < 10) {
-      toast.error("Veuillez entrer un numéro valide (10 chiffres).", {
-        style: { borderRadius: '12px', background: '#333', color: '#fff' }
-      }); 
+      toast.error("Veuillez entrer un numéro valide (10 chiffres).", { style: { borderRadius: '12px', background: '#333', color: '#fff' }}); 
       setIsSubmitting(false);
       return;
     }
@@ -70,12 +99,15 @@ export default function CustomerCheckIn() {
     }]);
 
     if (error) {
-      toast.error("Erreur lors de l'inscription.", {
-        style: { borderRadius: '12px', background: '#333', color: '#fff' }
-      }); 
-      console.error(error);
+      toast.error("Erreur lors de l'inscription.", { style: { borderRadius: '12px', background: '#333', color: '#fff' }}); 
     } else {
       setIsSuccess(true);
+      // ✨ MAGIC: Save this barber to the customer's phone memory!
+      localStorage.setItem('noubba_saved_barber', JSON.stringify({
+        id: rawBarberId,
+        name: barberData.shop_name,
+        image: barberData.profile_image_url
+      }));
     }
     setIsSubmitting(false);
   };
@@ -98,14 +130,8 @@ export default function CustomerCheckIn() {
           <div className="h-5 bg-slate-200/50 rounded-lg w-1/2 mx-auto mb-6"></div>
           <div className="h-10 bg-slate-200/50 rounded-full w-2/3 mx-auto mb-10"></div>
           <div className="space-y-6">
-            <div>
-              <div className="h-4 bg-slate-200/50 rounded w-24 mb-2"></div>
-              <div className="h-14 bg-slate-100/50 rounded-2xl w-full"></div>
-            </div>
-            <div>
-              <div className="h-4 bg-slate-200/50 rounded w-32 mb-2"></div>
-              <div className="h-14 bg-slate-100/50 rounded-2xl w-full"></div>
-            </div>
+            <div className="h-4 bg-slate-200/50 rounded w-24 mb-2"></div>
+            <div className="h-14 bg-slate-100/50 rounded-2xl w-full"></div>
             <div className="h-16 bg-slate-200/50 rounded-2xl w-full mt-8"></div>
           </div>
         </div>
@@ -113,47 +139,25 @@ export default function CustomerCheckIn() {
     );
   }
 
-  // THE LOCKED DOOR (Upgraded with Custom Image & Raw Google Map Link)
   if (barberData.is_open === false) {
     return (
       <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-100 via-slate-50 to-slate-100 flex flex-col items-center justify-center p-4">
         <div className="w-full max-w-md bg-white/80 backdrop-blur-2xl border border-white rounded-[2rem] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] p-10 text-center">
-          
           {barberData.profile_image_url ? (
             <div className="w-24 h-24 mx-auto mb-5 rounded-3xl overflow-hidden shadow-xl border-4 border-white">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={barberData.profile_image_url} alt={barberData.shop_name} className="w-full h-full object-cover" />
             </div>
           ) : (
-            <div className="w-20 h-20 bg-slate-900 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl">
-              <Scissors className="w-10 h-10 text-amber-400" />
-            </div>
+            <div className="w-20 h-20 bg-slate-900 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl"><Scissors className="w-10 h-10 text-amber-400" /></div>
           )}
-          
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{barberData.shop_name}</h1>
           <p className="text-amber-600 font-bold uppercase tracking-widest text-sm mt-2 mb-4">{barberData.owner_name}</p>
-
-          {/* ✨ UPGRADED: Using raw Google Maps Link */}
-          {barberData.location && (
-            <a 
-              href={barberData.location.startsWith('http') ? barberData.location : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(barberData.location)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors mb-8 shadow-sm"
-            >
-              <MapPin className="w-4 h-4 text-amber-500" />
-              Voir sur la carte
-            </a>
-          )}
-
-          {/* Status Card */}
           <div className="bg-slate-900 rounded-2xl p-6 mb-8 text-white">
             <Clock className="w-10 h-10 text-amber-400 mx-auto mb-4" />
             <h2 className="text-xl font-bold mb-2">Salon Fermé</h2>
-            <p className="text-slate-400 font-medium">Nous sommes actuellement fermés. Revenez plus tard pour prendre votre place !</p>
+            <p className="text-slate-400 font-medium">Nous sommes actuellement fermés. Revenez plus tard !</p>
           </div>
-          
-          <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Propulsé par Noubba</p>
         </div>
       </div>
     );
@@ -167,9 +171,20 @@ export default function CustomerCheckIn() {
             <CheckCircle2 className="w-12 h-12" />
           </div>
           <h2 className="text-3xl font-extrabold text-slate-900 mb-4 tracking-tight">Vous y êtes !</h2>
-          <p className="text-slate-500 leading-relaxed text-lg">
+          <p className="text-slate-500 leading-relaxed text-lg mb-8">
             <strong className="text-slate-900 font-bold">{barberData.shop_name}</strong> vous enverra un message sur WhatsApp dès que ce sera votre tour.
           </p>
+          
+          {/* ✨ NEW: Customer Install Button */}
+          {(installPrompt || isIOS) && (
+            <button 
+              onClick={handleInstallClick}
+              className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-2xl transition-all shadow-xl active:scale-95 flex items-center justify-center gap-2"
+            >
+              <Download className="w-5 h-5 text-amber-400" /> Installer l'App
+            </button>
+          )}
+          <p className="text-xs text-slate-400 mt-4 font-medium">Installez l'app pour reprendre votre place rapidement la prochaine fois.</p>
         </div>
       </div>
     );
@@ -178,44 +193,25 @@ export default function CustomerCheckIn() {
   return (
      <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-100 via-slate-50 to-slate-100 flex flex-col items-center justify-center p-4 font-sans pb-12 sm:p-6">
       <div className="w-full max-w-md bg-white/80 backdrop-blur-2xl border border-white rounded-[2rem] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] p-6 sm:p-10 relative overflow-hidden">
-        
         <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-amber-300 via-amber-500 to-amber-300 opacity-90"></div>
-
         <div className="text-center mb-10 mt-2">
-          
-          {/* Dynamic Profile Photo */}
           {barberData.profile_image_url ? (
             <div className="w-24 h-24 mx-auto mb-5 rounded-3xl overflow-hidden shadow-xl border-4 border-white">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={barberData.profile_image_url} alt={barberData.shop_name} className="w-full h-full object-cover" />
             </div>
           ) : (
-            <div className="w-16 h-16 bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-slate-900/10">
-              <Scissors className="w-8 h-8 text-amber-400" />
-            </div>
+            <div className="w-16 h-16 bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-slate-900/10"><Scissors className="w-8 h-8 text-amber-400" /></div>
           )}
-
           <h1 className="text-3xl font-extrabold text-slate-900 mb-1 tracking-tight">{barberData.shop_name}</h1>
           <h2 className="text-xs font-bold text-amber-600 uppercase tracking-widest mt-1 opacity-90 mb-4">{barberData.owner_name}</h2>
-          
-          {/* ✨ UPGRADED: Using raw Google Maps Link */}
           {barberData.location && (
-            <a 
-              href={barberData.location.startsWith('http') ? barberData.location : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(barberData.location)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors mb-2 shadow-sm"
-            >
-              <MapPin className="w-4 h-4 text-amber-500" />
-              Voir sur la carte
+            <a href={barberData.location.startsWith('http') ? barberData.location : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(barberData.location)}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition-colors mb-2 shadow-sm">
+              <MapPin className="w-4 h-4 text-amber-500" /> Voir sur la carte
             </a>
           )}
-
           <div className="mt-6 inline-flex items-center gap-2.5 px-5 py-2.5 bg-white border border-slate-100 rounded-full shadow-sm">
-            <div className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-            </div>
+            <div className="relative flex h-2.5 w-2.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span></div>
             <span className="text-sm text-slate-600 font-semibold">{queueLength} personne(s) en attente</span>
           </div>
         </div>
@@ -226,39 +222,19 @@ export default function CustomerCheckIn() {
               <label className="text-sm font-bold text-slate-700">Votre Nom</label>
               <label className="text-sm font-bold text-slate-700" dir="rtl">الإسم</label>
             </div>
-            <input 
-              type="text" required value={customerName} onChange={(e) => setCustomerName(e.target.value)} 
-              className="w-full px-5 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 focus:bg-white focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all duration-300 text-base" 
-              placeholder="Ex: Youssef" 
-            />
+            <input type="text" required value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="w-full px-5 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 focus:bg-white focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all duration-300 text-base" placeholder="Ex: Youssef" />
           </div>
           <div className="space-y-2">
             <div className="flex justify-between px-1">
               <label className="text-sm font-bold text-slate-700">Numéro WhatsApp</label>
               <label className="text-sm font-bold text-slate-700" dir="rtl">رقم الواتساب</label>
             </div>
-            <input 
-              type="tel" required value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} 
-              className="w-full px-5 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 focus:bg-white focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all duration-300 text-base font-mono" 
-              placeholder="06 94 64 54 15" 
-            />
+            <input type="tel" required value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} className="w-full px-5 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 focus:bg-white focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all duration-300 text-base font-mono" placeholder="06 94 64 54 15" />
           </div>
-
-          <button 
-            type="submit" disabled={isSubmitting} 
-            className="w-full mt-10 bg-gradient-to-r from-slate-900 to-slate-800 hover:from-slate-800 hover:to-slate-700 text-white font-bold py-4.5 rounded-2xl transition-all duration-300 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.3)] hover:shadow-[0_15px_40px_-10px_rgba(0,0,0,0.4)] active:scale-[0.98] disabled:opacity-70 text-lg flex justify-center items-center gap-2.5 h-16"
-          >
-            {isSubmitting ? (
-              <span className="flex items-center gap-2"><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Connexion...</span>
-            ) : (
-              <><Check className="w-6 h-6 text-amber-400" /> Prendre ma place / شد نوبتك</>
-            )}
+          <button type="submit" disabled={isSubmitting} className="w-full mt-10 bg-gradient-to-r from-slate-900 to-slate-800 hover:from-slate-800 hover:to-slate-700 text-white font-bold py-4.5 rounded-2xl transition-all duration-300 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.3)] active:scale-[0.98] disabled:opacity-70 text-lg flex justify-center items-center gap-2.5 h-16">
+            {isSubmitting ? (<span className="flex items-center gap-2"><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Connexion...</span>) : (<><Check className="w-6 h-6 text-amber-400" /> Prendre ma place / شد نوبتك</>)}
           </button>
         </form>
-        
-        <div className="mt-10 text-center">
-          <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Propulsé par Noubba</p>
-        </div>
       </div>
     </div>
   );
