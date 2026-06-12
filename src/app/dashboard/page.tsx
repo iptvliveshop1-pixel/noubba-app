@@ -17,7 +17,7 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isApproved, setIsApproved] = useState(false);
   
-  // ✨ NEW: State for Google Users who need to complete their profile
+  // State for Google Users who need to complete their profile
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [onboardShopName, setOnboardShopName] = useState('');
   const [onboardOwnerName, setOnboardOwnerName] = useState('');
@@ -60,7 +60,7 @@ export default function Dashboard() {
 
       const { data: barber } = await supabase.from('barbers').select('*').eq('user_id', session.user.id).single();
 
-      // ✨ NEW: If they logged in with Google but have no salon profile yet
+      // If they logged in with Google but have no salon profile yet
       if (!barber) {
         setNeedsOnboarding(true);
         setIsLoading(false);
@@ -94,7 +94,7 @@ export default function Dashboard() {
     checkAuthAndFetchQueue();
   }, []);
 
-  // ✨ NEW: Handle the Google User Onboarding Form
+  // Handle the Google User Onboarding Form
   const handleCompleteOnboarding = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userId) return;
@@ -332,7 +332,7 @@ export default function Dashboard() {
     }
   };
 
-  // ✨ NEW: Google Onboarding Screen
+  // Google Onboarding Screen
   if (!isLoading && needsOnboarding) {
     return (
       <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans">
@@ -392,11 +392,11 @@ export default function Dashboard() {
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-amber-200">
       
       {/* NATIVE HERO SECTION (Edge to Edge) */}
-      <div className="h-[28vh] w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
+      <div className="min-h-[32vh] pt-12 pb-8 w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black"></div>
         
-        {/* Floating Actions Top */}
-        <div className="absolute top-0 w-full left-0 px-6 py-6 flex justify-between items-center z-20">
+        {/* Floating Actions Top - Moved down for Notch safety */}
+        <div className="absolute top-4 sm:top-6 w-full left-0 px-4 flex justify-between items-center z-20">
           <button 
             onClick={toggleShopStatus}
             disabled={isToggling}
@@ -404,26 +404,29 @@ export default function Dashboard() {
               isOpen ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-white/10 text-slate-300 border border-white/20'
             }`}
           >
-            <Power className="w-4 h-4" /> {isOpen ? 'Salon Ouvert' : 'Salon Fermé'}
+            <Power className="w-4 h-4 shrink-0" /> <span className="truncate">{isOpen ? 'Salon Ouvert' : 'Salon Fermé'}</span>
           </button>
           
-          <button onClick={handleLogout} className="w-10 h-10 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-slate-300 hover:text-white active:scale-95 transition-all backdrop-blur-md">
+          <button onClick={handleLogout} className="w-10 h-10 shrink-0 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-slate-300 hover:text-white active:scale-95 transition-all backdrop-blur-md">
             <LogOut className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="relative z-10 mt-8 flex items-center gap-4">
+        {/* Profile Info - Added margin and text truncation */}
+        <div className="relative z-10 mt-12 flex items-center gap-4">
           {profileImage ? (
             /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={profileImage} alt="Profile" className="w-16 h-16 rounded-full object-cover border-2 border-white/20 shadow-lg" />
+            <img src={profileImage} alt="Profile" className="w-16 h-16 shrink-0 rounded-full object-cover border-2 border-white/20 shadow-lg" />
           ) : (
-            <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center border-2 border-white/20 shadow-lg">
-              <span className="text-2xl font-black text-amber-500">{shopName.charAt(0)}</span>
+            <div className="w-16 h-16 shrink-0 bg-slate-800 rounded-full flex items-center justify-center border-2 border-white/20 shadow-lg">
+              <span className="text-2xl font-black text-amber-500">{shopName ? shopName.charAt(0).toUpperCase() : 'S'}</span>
             </div>
           )}
-          <div>
-            <h1 className="text-3xl font-black text-white tracking-tight leading-none mb-1">Bonjour, {ownerName.split(' ')[0]}</h1>
-            <p className="text-slate-400 font-medium text-sm">{shopName}</p>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-none mb-1 truncate">
+              Bonjour, {ownerName ? ownerName.split(' ')[0] : ''}
+            </h1>
+            <p className="text-slate-400 font-medium text-sm truncate">{shopName}</p>
           </div>
         </div>
       </div>
@@ -583,9 +586,8 @@ export default function Dashboard() {
 
         {/* Walk-in Modal */}
         {showWalkInModal && (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-t-[2rem] sm:rounded-[2rem] w-full max-w-sm p-6 sm:p-8 shadow-2xl relative animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300">
-              <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6 sm:hidden"></div>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 sm:p-8 shadow-2xl relative animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
               <button onClick={() => setShowWalkInModal(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-700 bg-slate-100 p-2 rounded-full transition-colors">
                 <X className="w-5 h-5" />
               </button>

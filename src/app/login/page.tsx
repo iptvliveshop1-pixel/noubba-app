@@ -24,7 +24,13 @@ export default function Login() {
       setIsLoading(false);
     } else {
       toast.success("Bon retour !", { id: toastId });
-      router.push('/dashboard');
+      
+      // ✨ THE FIX: Check if it is the CEO logging in!
+      if (email.toLowerCase() === 'zrirjawad@gmail.com') {
+        router.push('/admin');
+      } else {
+        router.push('/dashboard');
+      }
     }
   };
 

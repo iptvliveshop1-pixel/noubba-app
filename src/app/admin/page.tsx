@@ -3,52 +3,60 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { ShieldCheck, Store, Check, Link as LinkIcon, LogOut, CheckCircle2, Coffee } from 'lucide-react';
+import { LogOut, CheckCircle, XCircle, Store, ShieldAlert, Users, Search, ChevronLeft } from 'lucide-react';
+import Link from 'next/link';
 
 export default function AdminDashboard() {
   const [pendingBarbers, setPendingBarbers] = useState<any[]>([]);
+  const [activeBarbers, setActiveBarbers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
-  // 👑 DEFINING THE BOSS: Only this exact email can bypass the Bouncer
-  const ADMIN_EMAIL = "zrirjawad@gmail.com"; 
-
   useEffect(() => {
-    const checkAdminAndFetch = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      // 🛡️ THE BOUNCER: Kick them out if they aren't logged in OR if they aren't you!
-      if (!session || session.user.email !== ADMIN_EMAIL) {
-        window.location.href = '/login';
-        return;
-      }
-
-      // If it is you, fetch barbers who are waiting for approval
-      const { data } = await supabase
-        .from('barbers')
-        .select('*')
-        .eq('approval_status', 'pending');
-        
-      if (data) setPendingBarbers(data);
-      setIsLoading(false);
-    };
-
-    checkAdminAndFetch();
+    fetchBarbers();
   }, []);
 
-  const handleApprove = async (barberId: string) => {
-    const toastId = toast.loading("Approbation en cours...", { style: { borderRadius: '12px' }}); 
+  const fetchBarbers = async () => {
+    setIsLoading(true);
     
-    const { error } = await supabase
-      .from('barbers')
-      .update({ approval_status: 'approved' })
-      .eq('id', barberId);
+    // Check if it's the CEO
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session || session.user.email !== 'zrirjawad@gmail.com') {
+      router.push('/dashboard');
+      return;
+    }
 
+    const { data, error } = await supabase.from('barbers').select('*').order('created_at', { ascending: false });
+    
+    if (data) {
+      setPendingBarbers(data.filter(b => b.approval_status === 'pending'));
+      setActiveBarbers(data.filter(b => b.approval_status === 'approved'));
+    }
+    setIsLoading(false);
+  };
+
+  const handleApprove = async (id: string, shopName: string) => {
+    const toastId = toast.loading("Approbation en cours...");
+    const { error } = await supabase.from('barbers').update({ approval_status: 'approved' }).eq('id', id);
+    
     if (!error) {
-      setPendingBarbers(prev => prev.filter(b => b.id !== barberId));
-      toast.success("Barbier approuvé avec succès !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
+      toast.success(`${shopName} est maintenant en ligne !`, { id: toastId });
+      fetchBarbers();
     } else {
-      toast.error("Erreur lors de l'approbation.", { id: toastId });
+      toast.error("Erreur d'approbation.", { id: toastId });
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    if (!confirm("Voulez-vous vraiment supprimer ce salon ?")) return;
+    const toastId = toast.loading("Suppression...");
+    const { error } = await supabase.from('barbers').delete().eq('id', id);
+    
+    if (!error) {
+      toast.success("Salon supprimé.", { id: toastId });
+      fetchBarbers();
+    } else {
+      toast.error("Erreur de suppression.", { id: toastId });
     }
   };
 
@@ -58,85 +66,105 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-24 selection:bg-amber-200">
+    <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-amber-200">
       
-      {/* Floating Admin Header */}
-      <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200/50 mb-8">
-        <div className="max-w-4xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="bg-slate-900 p-2 rounded-xl shadow-md">
-              <ShieldCheck className="w-6 h-6 text-amber-400" />
-            </div>
-            <div>
-              <h1 className="text-xl font-extrabold tracking-tight text-slate-900">Espace Admin</h1>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Noubba HQ</p>
-            </div>
-          </div>
-          <button onClick={handleLogout} className="flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-900 transition-colors active:scale-95">
-            <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">Quitter</span>
+      {/* CEO HERO SECTION */}
+      <div className="min-h-[30vh] pt-12 pb-8 w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black"></div>
+        
+        <div className="absolute top-4 sm:top-6 w-full left-0 px-4 flex justify-between items-center z-20">
+          <Link href="/" className="w-10 h-10 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-slate-300 hover:text-white active:scale-95 transition-all backdrop-blur-md">
+            <ChevronLeft className="w-5 h-5 pr-0.5" />
+          </Link>
+          <button onClick={handleLogout} className="w-10 h-10 shrink-0 bg-red-500/20 border border-red-500/30 rounded-full flex items-center justify-center text-red-400 hover:text-red-300 active:scale-95 transition-all backdrop-blur-md">
+            <LogOut className="w-4 h-4" />
           </button>
+        </div>
+
+        <div className="relative z-10 mt-10">
+          <div className="w-14 h-14 bg-amber-500 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-amber-500/20">
+            <ShieldAlert className="w-7 h-7 text-slate-900" />
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight leading-none mb-2">Espace Admin</h1>
+          <p className="text-slate-400 font-medium text-sm">Contrôle central de Noubba SaaS.</p>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6">
-        <div className="mb-8">
-          <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Approbations en attente</h2>
-          <p className="text-slate-500 font-medium mt-1">Examinez et validez les nouveaux salons.</p>
+      {/* MAIN CONTENT SHEET */}
+      <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-8 pb-32 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
+        
+        {/* STATS ROW */}
+        <div className="grid grid-cols-2 gap-4 mb-8">
+          <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
+            <div className="flex items-center gap-2 mb-2"><ShieldAlert className="w-5 h-5 text-amber-500" /><span className="text-xs font-bold text-slate-500 uppercase">En Attente</span></div>
+            <span className="text-3xl font-black text-slate-900">{pendingBarbers.length}</span>
+          </div>
+          <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
+            <div className="flex items-center gap-2 mb-2"><Users className="w-5 h-5 text-emerald-500" /><span className="text-xs font-bold text-slate-500 uppercase">Actifs</span></div>
+            <span className="text-3xl font-black text-slate-900">{activeBarbers.length}</span>
+          </div>
         </div>
 
+        {/* PENDING APPROVALS */}
+        <h2 className="text-xl font-black text-slate-900 mb-4 tracking-tight">Demandes d'activation</h2>
         {isLoading ? (
-          <div className="space-y-4">
-            {[1, 2].map((i) => (
-              <div key={i} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-5 animate-pulse">
-                <div className="w-full md:w-1/2">
-                  <div className="h-7 bg-slate-200 rounded-lg w-48 mb-3"></div>
-                  <div className="h-4 bg-slate-100 rounded-full w-32 mb-4"></div>
-                  <div className="h-8 bg-slate-50 rounded-lg w-64"></div>
-                </div>
-                <div className="h-14 bg-slate-200 rounded-2xl w-full md:w-40"></div>
-              </div>
-            ))}
-          </div>
+          <div className="h-32 bg-white rounded-3xl border border-slate-100 animate-pulse w-full mb-8"></div>
         ) : pendingBarbers.length === 0 ? (
-          <div className="bg-white p-16 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 text-center animate-in zoom-in-95 duration-500">
-            <div className="w-24 h-24 bg-emerald-50 border border-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <CheckCircle2 className="w-12 h-12 text-emerald-500" />
-            </div>
-            <h3 className="text-2xl font-extrabold text-slate-900 mb-2 tracking-tight">Tout est à jour</h3>
-            <p className="text-slate-500 font-medium">Aucun barbier en attente d'approbation pour le moment.</p>
+          <div className="bg-slate-100/50 border border-slate-200/60 border-dashed rounded-3xl p-8 text-center mb-8">
+            <p className="text-slate-500 font-bold text-sm">Aucune demande en attente.</p>
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="space-y-4 mb-10">
             {pendingBarbers.map((barber) => (
-              <div 
-                key={barber.id} 
-                className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] flex flex-col md:flex-row justify-between items-start md:items-center gap-6 transition-all duration-300 hover:-translate-y-1"
-              >
-                <div className="w-full md:w-auto">
-                  <h3 className="text-2xl font-extrabold text-slate-900 mb-2 flex items-center gap-2 tracking-tight">
-                    <Store className="w-6 h-6 text-amber-500" /> {barber.shop_name}
-                  </h3>
-                  <p className="text-slate-500 font-medium flex items-center gap-2 mb-4">
-                    Propriétaire: <span className="text-slate-900 font-bold">{barber.owner_name}</span>
-                  </p>
-                  <div className="inline-flex items-center gap-2 bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl">
-                    <LinkIcon className="w-4 h-4 text-slate-400" />
-                    <span className="text-sm font-mono text-slate-600">
-                      noubba.com/{barber.owner_name.toLowerCase().replace(/\s+/g, '-')}
-                    </span>
+              <div key={barber.id} className="bg-white p-5 rounded-[2rem] shadow-sm border border-amber-100 flex flex-col gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center shrink-0 border border-amber-100/50">
+                    <Store className="w-6 h-6 text-amber-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900 leading-tight">{barber.shop_name}</h3>
+                    <p className="text-slate-500 text-xs font-bold uppercase mt-0.5">{barber.owner_name}</p>
                   </div>
                 </div>
-                
-                <button 
-                  onClick={() => handleApprove(barber.id)}
-                  className="w-full md:w-auto flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-lg font-bold py-4 px-8 rounded-2xl transition-all shadow-lg shadow-emerald-500/20 active:scale-[0.98] shrink-0"
-                >
-                  <Check className="w-6 h-6" /> Approuver
-                </button>
+                <div className="flex gap-2 w-full mt-2">
+                  <button onClick={() => handleApprove(barber.id, barber.shop_name)} className="flex-1 h-12 flex items-center justify-center gap-2 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-xl transition-all text-sm">
+                    <CheckCircle className="w-4 h-4 text-emerald-400" /> Activer
+                  </button>
+                  <button onClick={() => handleReject(barber.id)} className="w-14 h-12 flex items-center justify-center bg-slate-50 text-slate-500 active:bg-slate-100 rounded-xl border border-slate-200 transition-all shrink-0">
+                    <XCircle className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         )}
+
+        {/* ACTIVE BARBERS */}
+        <h2 className="text-xl font-black text-slate-900 mb-4 tracking-tight flex items-center justify-between">
+          Salons Actifs
+        </h2>
+        <div className="space-y-3">
+          {activeBarbers.map((barber) => (
+            <div key={barber.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center shrink-0">
+                  <span className="text-slate-900 font-black">{barber.shop_name.charAt(0)}</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm leading-tight">{barber.shop_name}</h3>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <p className="text-slate-400 text-xs font-medium">{barber.owner_name}</p>
+                  </div>
+                </div>
+              </div>
+              <Link href={`/${barber.owner_name.toLowerCase().replace(/\s+/g, '-')}`} className="w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 active:bg-slate-100">
+                <Search className="w-4 h-4" />
+              </Link>
+            </div>
+          ))}
+        </div>
+
       </div>
     </div>
   );

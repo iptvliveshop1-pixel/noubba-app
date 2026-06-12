@@ -135,8 +135,8 @@ export default function Home() {
 
       {/* STICKY BOTTOM BAR (Barber Sign Up) */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-slate-100 z-50 pb-8 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
-        <Link href="/signup" className="w-full h-16 bg-amber-500 active:bg-amber-400 text-slate-900 font-black rounded-2xl transition-colors text-lg flex items-center justify-center gap-3 shadow-lg shadow-amber-500/20">
-          Créer mon espace <span className="bg-slate-900 text-white text-xs px-2.5 py-1.5 rounded-lg ml-1 font-bold">5$/mois</span>
+        <Link href="/signup" className="w-full h-16 bg-amber-500 active:bg-amber-400 text-slate-900 font-black rounded-2xl transition-colors text-lg flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20">
+          Créer mon espace <ArrowRight className="w-5 h-5" />
         </Link>
       </div>
 
