@@ -1,144 +1,119 @@
-'use client';
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Scissors, Zap, MessageSquare, LayoutDashboard, QrCode, Download, ArrowRight, Smartphone } from 'lucide-react';
-import { toast } from 'react-hot-toast';
+import { Scissors, QrCode, Smartphone, MapPin, ArrowRight, Timer, CheckCircle2 } from 'lucide-react';
 
 export default function Home() {
-  const [installPrompt, setInstallPrompt] = useState<any>(null);
-  const [isIOS, setIsIOS] = useState(false);
-  const [savedBarber, setSavedBarber] = useState<{ id: string, name: string, image: string | null } | null>(null);
-
-  useEffect(() => {
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    if (/iphone|ipad|ipod/.test(userAgent)) setIsIOS(true);
-
-    const handleBeforeInstallPrompt = (e: any) => {
-      e.preventDefault();
-      setInstallPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
-    const stored = localStorage.getItem('noubba_saved_barber');
-    if (stored) {
-      try {
-        setSavedBarber(JSON.parse(stored));
-      } catch (e) {}
-    }
-
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-  }, []);
-
-  const handleInstallClick = async () => {
-    if (installPrompt) {
-      installPrompt.prompt();
-      const { outcome } = await installPrompt.userChoice;
-      if (outcome === 'accepted') setInstallPrompt(null);
-    } else if (isIOS) {
-      toast("Sur iPhone : Appuyez sur l'icône Partager ⬆️ au milieu en bas, puis sur « Sur l'écran d'accueil ».", {
-        icon: '📱', duration: 6000, style: { borderRadius: '12px', background: '#333', color: '#fff' }
-      });
-    } else {
-      toast.success("L'application est déjà installée !", { style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
-    }
-  };
-
   return (
-    <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-amber-200">
+    <div className="min-h-[100dvh] bg-slate-50 font-sans selection:bg-amber-200">
       
-      {/* NATIVE HERO SECTION (Edge to Edge) */}
-      <div className="h-[45vh] w-full bg-slate-900 relative flex flex-col items-center justify-center overflow-hidden">
-        {/* Deep premium gradient */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black"></div>
-
-        {/* Floating Top Bar */}
-        <div className="absolute top-0 w-full px-6 py-6 flex justify-between items-center z-20">
-          <div className="flex items-center gap-2">
-            <div className="bg-amber-400 p-1.5 rounded-xl"><Scissors className="w-5 h-5 text-slate-900" /></div>
-            <span className="text-white font-black tracking-tight text-xl">NOUBBA</span>
+      {/* NAVBAR */}
+      <nav className="absolute top-0 w-full px-6 py-6 flex justify-between items-center z-50">
+        <div className="flex items-center gap-2">
+          <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center shadow-lg">
+            <Scissors className="w-5 h-5 text-slate-900" />
           </div>
-          <Link href="/login" className="text-slate-300 font-bold text-sm bg-white/10 px-5 py-2.5 rounded-full backdrop-blur-md active:bg-white/20 transition-colors">
+          <span className="font-black text-2xl text-white tracking-tight">Noubba</span>
+        </div>
+        <div className="flex gap-3">
+          <Link href="/login" className="px-4 py-2 text-sm font-bold text-white bg-white/10 hover:bg-white/20 rounded-full backdrop-blur-md transition-all">
             Connexion
           </Link>
         </div>
+      </nav>
 
-        <div className="relative z-10 text-center px-6 mt-4">
-          <h1 className="text-5xl sm:text-6xl font-black text-white tracking-tighter leading-[1.1] mb-4">
-            Fini l'attente <br/> <span className="text-amber-400">au salon.</span>
+      {/* HERO SECTION */}
+      <div className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 px-6 bg-slate-900 overflow-hidden rounded-b-[3rem] shadow-2xl">
+        <div className="absolute top-0 right-0 w-[30rem] h-[30rem] bg-amber-500/10 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/3"></div>
+        <div className="absolute bottom-0 left-0 w-[30rem] h-[30rem] bg-blue-500/10 rounded-full blur-[100px] translate-y-1/3 -translate-x-1/3"></div>
+        
+        <div className="relative z-10 max-w-4xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold text-sm mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            La nouvelle ère des salons de coiffure
+          </div>
+          
+          <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white tracking-tight leading-[1.1] mb-6 animate-in fade-in slide-in-from-bottom-6 duration-700">
+            La fin de l'attente <br/>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-amber-600">
+              interminable au salon.
+            </span>
           </h1>
-          <p className="text-slate-400 font-medium text-lg">Le 1er système de file d'attente WhatsApp au Maroc.</p>
-        </div>
-      </div>
+          
+          <p className="text-lg md:text-xl text-slate-300 mb-10 max-w-2xl mx-auto font-medium animate-in fade-in slide-in-from-bottom-8 duration-700 delay-150">
+            Gérez votre file d'attente, laissez vos clients suivre leur position en temps réel depuis leur téléphone, et alertez-les quand c'est leur tour. 100% digital, 0 friction.
+          </p>
 
-      {/* OVERLAPPING BOTTOM SHEET */}
-      <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-6 pt-8 pb-32 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
-
-        {/* NATIVE VIP CARD (Like Apple Wallet) */}
-        {savedBarber && (
-          <div className="mb-8 bg-white rounded-[2rem] p-5 shadow-sm border border-slate-200/60 transform transition-all active:scale-[0.98]">
-            <div className="flex justify-between items-center mb-5">
-              <span className="text-xs font-black text-amber-600 uppercase tracking-widest bg-amber-50 px-3 py-1.5 rounded-full">De retour ?</span>
-            </div>
-            <div className="flex items-center gap-4 mb-6">
-              {savedBarber.image ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img src={savedBarber.image} alt={savedBarber.name} className="w-16 h-16 rounded-2xl object-cover shadow-sm border border-slate-100" />
-              ) : (
-                <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center"><Scissors className="w-6 h-6 text-slate-400" /></div>
-              )}
-              <div>
-                <h3 className="text-xl font-black text-slate-900 tracking-tight">{savedBarber.name}</h3>
-                <p className="text-slate-500 font-medium text-sm">Votre salon favori</p>
-              </div>
-            </div>
-            <Link href={`/${savedBarber.id}`} className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl flex items-center justify-center gap-2 shadow-md active:bg-slate-800 transition-colors">
-              Reprendre ma place <ArrowRight className="w-5 h-5 text-amber-400" />
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-in fade-in slide-in-from-bottom-10 duration-700 delay-300">
+            <Link href="/signup" className="w-full sm:w-auto px-8 py-4 bg-amber-500 hover:bg-amber-400 text-slate-900 font-black rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-[0_0_40px_-10px_rgba(245,158,11,0.5)] text-lg">
+              Créer mon Salon <ArrowRight className="w-5 h-5" />
+            </Link>
+            <Link href="/client/signup" className="w-full sm:w-auto px-8 py-4 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all backdrop-blur-md border border-white/10 active:scale-95 text-lg">
+              Espace Client
             </Link>
           </div>
-        )}
+        </div>
+      </div>
 
-        {/* PWA INSTALL CARD */}
-        {(installPrompt || isIOS) && (
-          <button onClick={handleInstallClick} className="w-full mb-8 bg-amber-50 border border-amber-200/60 rounded-[2rem] p-5 flex items-center gap-4 text-left active:scale-[0.98] transition-transform">
-            <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center shrink-0">
-              <Download className="w-6 h-6 text-amber-600" />
-            </div>
-            <div>
-              <h3 className="font-bold text-slate-900">Installer l'application</h3>
-              <p className="text-xs text-slate-600 font-medium mt-0.5">Accès rapide depuis l'écran d'accueil</p>
-            </div>
-          </button>
-        )}
-
-        {/* NATIVE FEATURE GRID (For Barbers) */}
-        <div className="mt-2">
-          <h2 className="text-2xl font-black text-slate-900 mb-6 tracking-tight">Pour les Barbiers</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex flex-col justify-between">
-              <QrCode className="w-8 h-8 text-amber-500 mb-4" />
-              <div>
-                <h4 className="font-black text-slate-900 text-sm mb-1 tracking-tight">Scan QR</h4>
-                <p className="text-xs text-slate-500 font-medium leading-relaxed">Les clients scannent pour rejoindre la file.</p>
-              </div>
-            </div>
-            <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex flex-col justify-between">
-              <Smartphone className="w-8 h-8 text-amber-500 mb-4" />
-              <div>
-                <h4 className="font-black text-slate-900 text-sm mb-1 tracking-tight">WhatsApp</h4>
-                <p className="text-xs text-slate-500 font-medium leading-relaxed">Alertes auto avant leur tour.</p>
-              </div>
-            </div>
-          </div>
+      {/* HOW IT WORKS (NO MORE WHATSAPP) */}
+      <div className="py-24 px-6 max-w-6xl mx-auto">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">Comment ça marche ?</h2>
+          <p className="text-slate-500 font-medium max-w-xl mx-auto">Une expérience fluide et moderne qui respecte le temps de vos clients et optimise l'organisation de votre salon.</p>
         </div>
 
+        <div className="grid md:grid-cols-3 gap-8">
+          
+          {/* Step 1 */}
+          <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative group hover:border-amber-200 transition-colors">
+            <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center mb-6 border border-amber-100 group-hover:scale-110 transition-transform">
+              <QrCode className="w-7 h-7 text-amber-500" />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-3">1. Scan & Réservation</h3>
+            <p className="text-slate-500 font-medium leading-relaxed">Le client scanne le QR Code affiché dans votre salon ou vitrine et prend sa place virtuellement en un clic.</p>
+          </div>
+
+          {/* Step 2 (Updated from WhatsApp to Live Tracking) */}
+          <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative group hover:border-blue-200 transition-colors">
+            <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mb-6 border border-blue-100 group-hover:scale-110 transition-transform">
+              <Timer className="w-7 h-7 text-blue-500" />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-3">2. Suivi en Direct</h3>
+            <p className="text-slate-500 font-medium leading-relaxed">Fini l'attente sur les canapés. Le client suit sa position exacte en temps réel depuis son téléphone.</p>
+          </div>
+
+          {/* Step 3 (The Uber Method) */}
+          <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 relative group hover:border-emerald-200 transition-colors">
+            <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center mb-6 border border-emerald-100 group-hover:scale-110 transition-transform">
+              <CheckCircle2 className="w-7 h-7 text-emerald-500" />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-3">3. Alerte "En Route"</h3>
+            <p className="text-slate-500 font-medium leading-relaxed">Alertez-le quand c'est son tour. Il confirme qu'il est en route, et son statut devient vert sur votre tablette !</p>
+          </div>
+
+        </div>
       </div>
 
-      {/* STICKY BOTTOM BAR (Barber Sign Up) */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-slate-100 z-50 pb-8 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
-        <Link href="/signup" className="w-full h-16 bg-amber-500 active:bg-amber-400 text-slate-900 font-black rounded-2xl transition-colors text-lg flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20">
-          Créer mon espace <ArrowRight className="w-5 h-5" />
-        </Link>
+      {/* CTA SECTION */}
+      <div className="px-6 pb-24 max-w-5xl mx-auto">
+        <div className="bg-slate-900 rounded-[3rem] p-10 md:p-16 text-center relative overflow-hidden shadow-2xl">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_var(--tw-gradient-stops))] from-amber-500/20 via-slate-900 to-black"></div>
+          <div className="relative z-10">
+            <h2 className="text-3xl md:text-4xl font-black text-white mb-4 tracking-tight">Prêt à moderniser votre salon ?</h2>
+            <p className="text-slate-400 font-medium mb-8 max-w-lg mx-auto">Rejoignez les barbiers qui ont choisi Noubba pour offrir une expérience premium à leurs clients.</p>
+            <Link href="/signup" className="inline-flex px-8 py-4 bg-amber-500 hover:bg-amber-400 text-slate-900 font-black rounded-2xl items-center justify-center gap-2 transition-all active:scale-95 text-lg">
+              Créer mon compte gratuit <ArrowRight className="w-5 h-5" />
+            </Link>
+          </div>
+        </div>
       </div>
+
+      {/* FOOTER */}
+      <footer className="border-t border-slate-200 bg-white py-10 px-6 text-center">
+        <div className="flex items-center justify-center gap-2 mb-4">
+          <Scissors className="w-5 h-5 text-amber-500" />
+          <span className="font-black text-xl text-slate-900 tracking-tight">Noubba</span>
+        </div>
+        <p className="text-slate-400 text-sm font-medium">© {new Date().getFullYear()} Noubba. Conçu pour les barbiers du Maroc.</p>
+      </footer>
 
     </div>
   );

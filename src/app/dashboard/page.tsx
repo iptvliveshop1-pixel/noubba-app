@@ -1,15 +1,18 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, QrCode, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Smartphone, Store, User, ArrowRight } from 'lucide-react';
+import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Smartphone, Store, User, ArrowRight, Timer } from 'lucide-react';
 
 type Customer = {
   id: string;
   customer_name: string;
   whatsapp_number: string;
-  notified?: boolean; 
+  notified?: boolean;
+  alerted_at?: string;
+  is_confirmed?: boolean;
+  customers?: { full_name: string; phone_number: string };
 };
 
 export default function Dashboard() {
@@ -46,10 +49,43 @@ export default function Dashboard() {
 
   const router = useRouter();
 
+  // MAGIC UX: Memory reference to track who already "dinged"
+  const confirmedIds = useRef<Set<string>>(new Set());
+
+  // SEPARATED FETCH QUEUE FUNCTION FOR THE AUTO-REFRESH
+  const fetchQueueOnly = async (bId: string) => {
+    const { data, error } = await supabase
+      .from('queue')
+      .select('*, customers(full_name, phone_number)') 
+      .eq('barber_id', bId) 
+      .eq('status', 'waiting')
+      .order('joined_at', { ascending: true }); 
+
+    if (!error && data) {
+      let shouldPlaySound = false;
+
+      // Check if anyone NEW has confirmed
+      data.forEach(customer => {
+        if (customer.is_confirmed && !confirmedIds.current.has(customer.id)) {
+          shouldPlaySound = true;
+          confirmedIds.current.add(customer.id); // Remember them so we don't beep again
+        }
+      });
+
+      // Play the magical ding!
+      if (shouldPlaySound) {
+        const audio = new Audio('/ding.mp3');
+        audio.play().catch(e => console.log("Audio blocked by browser:", e));
+      }
+
+      setQueue(data);
+    }
+  };
+
   useEffect(() => {
     setOrigin(window.location.origin);
 
-    const checkAuthAndFetchQueue = async () => {
+    const checkAuthAndFetchData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         window.location.href = '/login';
@@ -60,7 +96,6 @@ export default function Dashboard() {
 
       const { data: barber } = await supabase.from('barbers').select('*').eq('user_id', session.user.id).single();
 
-      // If they logged in with Google but have no salon profile yet
       if (!barber) {
         setNeedsOnboarding(true);
         setIsLoading(false);
@@ -81,20 +116,22 @@ export default function Dashboard() {
       setLocation(barber.location || '');
       setProfileImage(barber.profile_image_url || '');
 
-      const { data, error } = await supabase
-        .from('queue')
-        .select('*')
-        .eq('barber_id', barber.id) 
-        .eq('status', 'waiting')
-        .order('joined_at', { ascending: true }); 
-
-      if (!error && data) setQueue(data);
+      await fetchQueueOnly(barber.id);
       setIsLoading(false);
     };
-    checkAuthAndFetchQueue();
+
+    checkAuthAndFetchData();
   }, []);
 
-  // Handle the Google User Onboarding Form
+  // UBER METHOD: 5-SECOND AUTO REFRESH
+  useEffect(() => {
+    if (!barberId) return;
+    const interval = setInterval(() => {
+      fetchQueueOnly(barberId);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [barberId]);
+
   const handleCompleteOnboarding = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userId) return;
@@ -112,7 +149,7 @@ export default function Dashboard() {
       toast.error("Erreur lors de la création.", { id: toastId });
     } else {
       toast.success("Profil complété !", { id: toastId });
-      setNeedsOnboarding(false); // Move them to the "Pending" screen
+      setNeedsOnboarding(false);
     }
     setIsOnboarding(false);
   };
@@ -208,25 +245,23 @@ export default function Dashboard() {
 
   const handleNotify = async (customer: Customer) => {
     setIsSendingAuth(customer.id);
-    const toastId = toast.loading("Envoi WhatsApp en cours...", { style: { borderRadius: '12px' }}); 
+    const toastId = toast.loading("Alerte en cours...", { style: { borderRadius: '12px' }}); 
     
     try {
-      const response = await fetch('/api/whatsapp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: customer.whatsapp_number,
-          name: customer.customer_name,
-          salonName: shopName 
-        })
-      });
+      const sendName = customer.customers?.full_name || customer.customer_name;
 
-      if (response.ok) {
-        toast.success(`Message envoyé à ${customer.customer_name} !`, { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
-        setQueue(prev => prev.map(c => c.id === customer.id ? { ...c, notified: true } : c));
-      } else {
-        toast.error("Échec de l'envoi.", { id: toastId });
-      }
+      // PURE UBER METHOD: We just trigger the timer in the database!
+      // This instantly updates the customer's dashboard screen.
+      const { error } = await supabase.from('queue').update({ 
+        alerted_at: new Date().toISOString(),
+        notified: true 
+      }).eq('id', customer.id);
+
+      if (error) throw error;
+
+      toast.success(`Alerte envoyée sur l'app à ${sendName.split(' ')[0]} !`, { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
+      if (barberId) fetchQueueOnly(barberId); // Instant refresh
+      
     } catch (error) {
       toast.error("Erreur réseau.", { id: toastId });
     } finally {
@@ -459,58 +494,89 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="space-y-4">
-            {queue.map((customer, index) => (
-              <div key={customer.id} className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col gap-4">
-                
-                {/* Customer Info Row */}
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center shrink-0 border border-amber-100/50">
-                      <span className="text-amber-600 font-black text-lg">#{index + 1}</span>
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-black text-slate-900 capitalize leading-tight">{customer.customer_name}</h3>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        {customer.whatsapp_number === 'Sur place' ? (
-                          <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider">Sur Place</span>
-                        ) : (
-                          <>
-                            <Smartphone className="w-3 h-3 text-slate-400" />
-                            <span className="text-slate-500 font-mono text-xs font-medium">{customer.whatsapp_number}</span>
-                          </>
-                        )}
-                        {customer.notified && <span className="ml-1 flex items-center text-[10px] font-bold text-emerald-600"><CheckCircle2 className="w-3 h-3 mr-0.5" /> Notifié</span>}
+            {queue.map((customer, index) => {
+              // UBER METHOD: SMART UI STATES
+              const isAlerted = !!customer.alerted_at;
+              const isConfirmed = customer.is_confirmed;
+              const displayName = customer.customers?.full_name || customer.customer_name;
+              const displayPhone = customer.customers?.phone_number || customer.whatsapp_number;
+
+              return (
+                <div 
+                  key={customer.id} 
+                  className={`p-5 rounded-[2rem] shadow-sm flex flex-col gap-4 transition-all duration-500 ${
+                    isConfirmed 
+                      ? 'bg-emerald-50/40 border-2 border-emerald-400 shadow-emerald-500/10' 
+                      : isAlerted 
+                        ? 'bg-orange-50/40 border-2 border-orange-300 shadow-orange-500/10' 
+                        : 'bg-white border border-slate-100'
+                  }`}
+                >
+                  
+                  {/* Customer Info Row */}
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                        isConfirmed ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : isAlerted ? 'bg-orange-100 border-orange-200 text-orange-700' : 'bg-amber-50 border-amber-100/50 text-amber-600'
+                      }`}>
+                        <span className="font-black text-lg">#{index + 1}</span>
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-black text-slate-900 capitalize leading-tight">{displayName}</h3>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          {displayPhone === 'Sur place' ? (
+                            <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider">Sur Place</span>
+                          ) : (
+                            <>
+                              <Smartphone className="w-3 h-3 text-slate-400" />
+                              <span className="text-slate-500 font-mono text-xs font-medium">{displayPhone}</span>
+                            </>
+                          )}
+                          
+                          {/* UBER METHOD BADGES */}
+                          {isConfirmed && (
+                            <span className="ml-1 flex items-center text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full animate-in fade-in zoom-in duration-300">
+                              <CheckCircle2 className="w-3 h-3 mr-0.5" /> En route
+                            </span>
+                          )}
+                          {isAlerted && !isConfirmed && (
+                            <span className="ml-1 flex items-center text-[10px] font-bold text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full animate-pulse">
+                              <Timer className="w-3 h-3 mr-0.5" /> En attente
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Thumb-friendly Action Buttons */}
-                <div className="flex flex-col gap-2 w-full mt-1">
-                  {customer.whatsapp_number !== 'Sur place' && (
-                    <button 
-                      onClick={() => handleNotify(customer)} 
-                      disabled={isSendingAuth === customer.id} 
-                      className="w-full h-12 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all active:scale-[0.98] disabled:opacity-50 text-sm"
-                    >
-                      {isSendingAuth === customer.id ? (
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                      ) : (
-                        <><Bell className="w-4 h-4 text-amber-400" /> Alerter sur WhatsApp</>
-                      )}
-                    </button>
-                  )}
-                  <div className="flex gap-2 w-full">
-                    <button onClick={() => handleComplete(customer.id)} className="flex-1 h-12 flex items-center justify-center gap-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-bold rounded-xl transition-all active:scale-[0.98] text-sm">
-                      <Check className="w-4 h-4" /> Terminé
-                    </button>
-                    <button onClick={() => handleCancel(customer.id)} className="flex-1 h-12 flex items-center justify-center gap-2 bg-slate-50 text-slate-500 hover:bg-slate-100 font-bold rounded-xl transition-all active:scale-[0.98] text-sm border border-slate-100">
-                      <UserX className="w-4 h-4" /> Absent
-                    </button>
+                  {/* Thumb-friendly Action Buttons */}
+                  <div className="flex flex-col gap-2 w-full mt-1">
+                    {/* Hide Alert button if already alerted or if walk-in */}
+                    {!isAlerted && displayPhone !== 'Sur place' && (
+                      <button 
+                        onClick={() => handleNotify(customer)} 
+                        disabled={isSendingAuth === customer.id} 
+                        className="w-full h-12 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all active:scale-[0.98] disabled:opacity-50 text-sm"
+                      >
+                        {isSendingAuth === customer.id ? (
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        ) : (
+                          <><Bell className="w-4 h-4 text-amber-400" /> Alerter le client (App)</>
+                        )}
+                      </button>
+                    )}
+                    <div className="flex gap-2 w-full">
+                      <button onClick={() => handleComplete(customer.id)} className={`flex-1 h-12 flex items-center justify-center gap-2 font-bold rounded-xl transition-all active:scale-[0.98] text-sm ${isConfirmed ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}>
+                        <Check className="w-4 h-4" /> Terminé
+                      </button>
+                      <button onClick={() => handleCancel(customer.id)} className="flex-1 h-12 flex items-center justify-center gap-2 bg-slate-50 text-slate-500 hover:bg-slate-100 font-bold rounded-xl transition-all active:scale-[0.98] text-sm border border-slate-100">
+                        <UserX className="w-4 h-4" /> Absent
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
