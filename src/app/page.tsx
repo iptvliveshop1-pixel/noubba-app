@@ -38,18 +38,19 @@ export default function Home() {
     <div className="min-h-[100dvh] bg-slate-50 font-sans selection:bg-amber-200">
       
       {/* NATIVE PREMIUM NAVBAR */}
-      <nav className="absolute top-0 w-full px-6 py-6 flex justify-between items-center z-50 max-w-7xl mx-auto left-0 right-0">
+      <nav className="absolute top-0 w-full px-4 sm:px-6 py-6 flex justify-between items-center z-50 max-w-7xl mx-auto left-0 right-0">
         <div className="flex items-center gap-2">
-          <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/20">
+          <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/20 shrink-0">
             <Scissors className="w-5 h-5 text-slate-900" />
           </div>
           <span className="font-black text-2xl text-white tracking-tight">Noubba</span>
         </div>
-        <div className="flex items-center gap-6">
-          <Link href="/client/login" className="hidden sm:block text-slate-300 hover:text-white font-bold text-sm transition-colors">
+        {/* FIX #1: Removed hidden sm:block and adjusted gap/padding for mobile */}
+        <div className="flex items-center gap-3 sm:gap-6">
+          <Link href="/client/login" className="text-slate-300 hover:text-white font-bold text-sm transition-colors whitespace-nowrap">
             Espace Client
           </Link>
-          <Link href="/login" className="px-6 py-2.5 text-sm font-bold text-slate-900 bg-white hover:bg-slate-100 rounded-full transition-all shadow-lg active:scale-95">
+          <Link href="/login" className="px-4 sm:px-6 py-2.5 text-sm font-bold text-slate-900 bg-white hover:bg-slate-100 rounded-full transition-all shadow-lg active:scale-95 shrink-0">
             Connexion
           </Link>
         </div>

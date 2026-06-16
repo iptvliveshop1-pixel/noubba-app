@@ -306,8 +306,9 @@ export default function Dashboard() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const shopSlug = ownerName ? ownerName.toLowerCase().replace(/\s+/g, '-') : '';
-  const shareLink = origin && shopSlug ? `${origin}/${shopSlug}` : '';
+  // FIX #2: Updated shareLink to point to the unbreakable /q/[id] route
+  const shopSlug = ownerName ? ownerName.toLowerCase().replace(/\s+/g, '-') : 'salon';
+  const shareLink = origin && barberId ? `${origin}/q/${barberId}` : '';
   const qrCodeUrl = shareLink ? `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(shareLink)}&color=0f172a&bgcolor=ffffff` : '';
 
   const downloadQR = async () => {
