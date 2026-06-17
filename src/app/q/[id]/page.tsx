@@ -53,7 +53,6 @@ export default function SmartStorefront() {
   const handleAction = async () => {
     // SCENARIO A: User is NOT logged in.
     if (!user) {
-      // We save the barber ID in the phone's memory so we can auto-book them AFTER they sign up
       localStorage.setItem('pending_booking_barber_id', barberId);
       toast("Veuillez créer un compte pour prendre votre place.", { 
         icon: '👋', 
@@ -84,7 +83,9 @@ export default function SmartStorefront() {
     }]);
 
     if (error) {
-      toast.error("Erreur lors de la réservation.", { id: toastId });
+      // ✨ FIX: Show the EXACT database error so we stop guessing
+      console.error("Supabase Booking Error:", error);
+      toast.error(`Erreur DB: ${error.message}`, { id: toastId, duration: 6000 });
       setIsBooking(false);
     } else {
       toast.success("Place réservée avec succès !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
@@ -131,9 +132,23 @@ export default function SmartStorefront() {
             </div>
           )}
           <h1 className="text-3xl font-black text-white tracking-tight leading-none mb-2">{barber.shop_name}</h1>
-          <p className="text-slate-400 font-medium flex items-center gap-1.5">
-            <MapPin className="w-4 h-4" /> {barber.location ? "Voir sur la carte" : "Maroc"}
-          </p>
+          
+          {/* ✨ FIX: Clickable Google Maps Link */}
+          {barber.location ? (
+            <a 
+              href={barber.location} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1.5 transition-colors underline decoration-blue-400/30 underline-offset-4"
+            >
+              <MapPin className="w-4 h-4" /> Voir sur la carte
+            </a>
+          ) : (
+            <p className="text-slate-400 font-medium flex items-center gap-1.5">
+              <MapPin className="w-4 h-4" /> Maroc
+            </p>
+          )}
+
         </div>
       </div>
 
