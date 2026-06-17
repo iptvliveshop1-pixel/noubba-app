@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Smartphone, Store, User, ArrowRight, Timer } from 'lucide-react';
+import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Smartphone, Store, User, ArrowRight, Timer, Scissors } from 'lucide-react';
 
 type Customer = {
   id: string;
@@ -14,7 +14,6 @@ type Customer = {
   customers?: { full_name: string; phone_number: string };
 };
 
-// Helper to format the countdown timer
 const formatTime = (seconds: number) => {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
@@ -26,7 +25,6 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isApproved, setIsApproved] = useState(false);
   
-  // State for Google Users who need to complete their profile
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [onboardShopName, setOnboardShopName] = useState('');
   const [onboardOwnerName, setOnboardOwnerName] = useState('');
@@ -50,18 +48,12 @@ export default function Dashboard() {
   const [location, setLocation] = useState('');
   const [profileImage, setProfileImage] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  // State to hold the live countdown timers for each customer
   const [timers, setTimers] = useState<Record<string, number>>({});
-
   const router = useRouter();
-
-  // MAGIC UX: Memory reference to track who already "dinged"
   const confirmedIds = useRef<Set<string>>(new Set());
 
-  // Effect to tick down the timers every second
   useEffect(() => {
     const interval = setInterval(() => {
       setTimers(prev => {
@@ -75,7 +67,6 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // SEPARATED FETCH QUEUE FUNCTION FOR THE AUTO-REFRESH
   const fetchQueueOnly = async (bId: string) => {
     const { data, error } = await supabase
       .from('queue')
@@ -87,22 +78,19 @@ export default function Dashboard() {
     if (!error && data) {
       let shouldPlaySound = false;
 
-      // Check if anyone NEW has confirmed
       data.forEach(customer => {
         if (customer.is_confirmed && !confirmedIds.current.has(customer.id)) {
           shouldPlaySound = true;
-          confirmedIds.current.add(customer.id); // Remember them so we don't beep again
+          confirmedIds.current.add(customer.id); 
         }
 
-        // Initialize timers for clients who were alerted but haven't confirmed yet
         if (customer.alerted_at && !customer.is_confirmed && !timers[customer.id]) {
           const elapsed = Math.floor((new Date().getTime() - new Date(customer.alerted_at).getTime()) / 1000);
-          const remaining = Math.max(0, 600 - elapsed); // 10 minutes (600s)
+          const remaining = Math.max(0, 600 - elapsed); 
           setTimers(prev => ({ ...prev, [customer.id]: remaining }));
         }
       });
 
-      // Play the magical ding!
       if (shouldPlaySound) {
         const audio = new Audio('/ding.mp3');
         audio.play().catch(e => console.log("Audio blocked by browser:", e));
@@ -153,7 +141,6 @@ export default function Dashboard() {
     checkAuthAndFetchData();
   }, []);
 
-  // UBER METHOD: 5-SECOND AUTO REFRESH
   useEffect(() => {
     if (!barberId) return;
     const interval = setInterval(() => {
@@ -257,7 +244,7 @@ export default function Dashboard() {
     const { error } = await supabase.from('queue').update({ status: 'completed' }).eq('id', customerId);
     if (!error) {
       setQueue(prev => prev.filter(c => c.id !== customerId));
-      toast.success("Client terminé !", { icon: '✨', style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
+      toast.success("Coupe terminée !", { icon: '✨', style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
     } else {
       toast.error("Erreur de mise à jour.");
     }
@@ -280,18 +267,16 @@ export default function Dashboard() {
     try {
       const sendName = customer.customers?.full_name || customer.customer_name;
 
-      // FIXED: Removed the 'notified: true' update to prevent the crash
       const { error } = await supabase.from('queue').update({ 
         alerted_at: new Date().toISOString()
       }).eq('id', customer.id);
 
       if (error) throw error;
 
-      // Start the 10-minute timer locally
       setTimers(prev => ({ ...prev, [customer.id]: 600 })); 
 
       toast.success(`Alerte envoyée sur l'app à ${sendName.split(' ')[0]} !`, { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
-      if (barberId) fetchQueueOnly(barberId); // Instant refresh
+      if (barberId) fetchQueueOnly(barberId); 
       
     } catch (error) {
       toast.error("Erreur réseau.", { id: toastId });
@@ -342,8 +327,7 @@ export default function Dashboard() {
   const qrCodeUrl = shareLink ? `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(shareLink)}&color=0f172a&bgcolor=ffffff` : '';
 
   const downloadQR = async () => {
-    const toastId = toast.loading("Création de votre affiche VIP...", { style: { borderRadius: '12px' }});
-    
+    const toastId = toast.loading("Création de l'affiche...", { style: { borderRadius: '12px' }});
     try {
       const response = await fetch(qrCodeUrl);
       const blob = await response.blob();
@@ -398,7 +382,6 @@ export default function Dashboard() {
     }
   };
 
-  // Google Onboarding Screen
   if (!isLoading && needsOnboarding) {
     return (
       <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans">
@@ -411,14 +394,14 @@ export default function Dashboard() {
         </div>
         <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-6 pt-10 pb-32 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
           <form id="onboard-form" onSubmit={handleCompleteOnboarding} className="space-y-4">
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all shadow-sm flex items-center gap-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-4">
               <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center shrink-0"><Store className="w-5 h-5 text-slate-400" /></div>
               <div className="flex-1">
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Nom du Salon</label>
                 <input type="text" required value={onboardShopName} onChange={(e) => setOnboardShopName(e.target.value)} className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-900 placeholder-slate-300 focus:ring-0 outline-none" placeholder="Barber Pro" />
               </div>
             </div>
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all shadow-sm flex items-center gap-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-4">
               <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center shrink-0"><User className="w-5 h-5 text-slate-400" /></div>
               <div className="flex-1">
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Votre Prénom</label>
@@ -427,8 +410,8 @@ export default function Dashboard() {
             </div>
           </form>
         </div>
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-slate-100 z-50 pb-8 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
-          <button type="submit" form="onboard-form" disabled={isOnboarding} className="w-full h-16 bg-amber-500 active:bg-amber-400 disabled:bg-slate-300 text-slate-900 font-black rounded-2xl transition-colors text-lg flex justify-center items-center gap-2">
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-slate-100 z-50 pb-8">
+          <button type="submit" form="onboard-form" disabled={isOnboarding} className="w-full h-16 bg-amber-500 active:bg-amber-400 text-slate-900 font-black rounded-2xl transition-colors text-lg flex justify-center items-center gap-2">
             {isOnboarding ? <div className="w-5 h-5 border-2 border-slate-900/30 border-t-slate-900 rounded-full animate-spin"></div> : <>Terminer <ArrowRight className="w-5 h-5" /></>}
           </button>
         </div>
@@ -438,14 +421,14 @@ export default function Dashboard() {
 
   if (!isLoading && !isApproved && !needsOnboarding) {
     return (
-      <div className="min-h-[100dvh] bg-slate-900 flex items-center justify-center p-6 text-center selection:bg-amber-500/30">
-        <div className="bg-slate-800 p-10 rounded-[2.5rem] shadow-2xl border border-slate-700 max-w-md w-full animate-in fade-in zoom-in-95 duration-500 relative overflow-hidden">
+      <div className="min-h-[100dvh] bg-slate-900 flex items-center justify-center p-6 text-center">
+        <div className="bg-slate-800 p-10 rounded-[2.5rem] shadow-2xl border border-slate-700 max-w-md w-full relative overflow-hidden">
           <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-500 to-amber-300"></div>
           <div className="w-20 h-20 bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
             <Coffee className="w-10 h-10 text-amber-500 animate-pulse" />
           </div>
           <h2 className="text-2xl font-black text-white mb-2 tracking-tight">Compte en attente</h2>
-          <p className="text-slate-400 mb-8 font-medium">Votre compte est en cours d'activation par l'administrateur. Veuillez revenir plus tard.</p>
+          <p className="text-slate-400 mb-8 font-medium">Votre compte est en cours d'activation par l'administrateur.</p>
           <button onClick={handleLogout} className="w-full py-4 bg-slate-700 hover:bg-slate-600 text-white rounded-2xl font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2">
             <LogOut className="w-4 h-4" /> Se déconnecter
           </button>
@@ -457,11 +440,9 @@ export default function Dashboard() {
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-amber-200">
       
-      {/* NATIVE HERO SECTION (Edge to Edge) */}
       <div className="min-h-[32vh] pt-12 pb-8 w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black"></div>
         
-        {/* Floating Actions Top - Moved down for Notch safety */}
         <div className="absolute top-4 sm:top-6 w-full left-0 px-4 flex justify-between items-center z-20">
           <button 
             onClick={toggleShopStatus}
@@ -478,7 +459,6 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {/* Profile Info - Added margin and text truncation */}
         <div className="relative z-10 mt-12 flex items-center gap-4">
           {profileImage ? (
             /* eslint-disable-next-line @next/next/no-img-element */
@@ -497,10 +477,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* OVERLAPPING BOTTOM SHEET */}
       <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-8 pb-32 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
 
-        {/* Queue Header */}
         <div className="flex justify-between items-end mb-6 px-2">
           <div>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">File d'attente</h2>
@@ -508,7 +486,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Queue List */}
         {isLoading ? (
           <div className="space-y-4">
             {[1, 2].map((i) => (
@@ -526,13 +503,55 @@ export default function Dashboard() {
         ) : (
           <div className="space-y-4">
             {queue.map((customer, index) => {
-              // UBER METHOD: SMART UI STATES
               const isAlerted = !!customer.alerted_at;
               const isConfirmed = customer.is_confirmed;
               const displayName = customer.customers?.full_name || customer.customer_name;
               const displayPhone = customer.customers?.phone_number || customer.whatsapp_number;
               const timeRemaining = timers[customer.id] || 0;
 
+              // ✨ NEW: THE "IN CHAIR" CARD FOR POSITION #1
+              if (index === 0) {
+                return (
+                  <div key={customer.id} className="p-6 rounded-[2rem] bg-slate-900 text-white shadow-xl shadow-slate-900/10 border border-slate-800 relative overflow-hidden transition-all duration-500">
+                    <div className="absolute -right-8 -bottom-8 opacity-[0.05] pointer-events-none">
+                      <Scissors className="w-48 h-48" />
+                    </div>
+                    
+                    <div className="flex justify-between items-start relative z-10">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/20">
+                          <Scissors className="w-6 h-6 text-slate-900 animate-pulse" />
+                        </div>
+                        <div>
+                          <span className="text-amber-400 font-bold text-xs uppercase tracking-widest mb-1 block">Sur le fauteuil</span>
+                          <h3 className="text-xl font-black text-white capitalize leading-tight">{displayName}</h3>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            {displayPhone === 'Sur place' ? (
+                              <span className="bg-white/10 text-slate-300 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider">Sur Place</span>
+                            ) : (
+                              <>
+                                <Smartphone className="w-3 h-3 text-slate-400" />
+                                <span className="text-slate-400 font-mono text-xs font-medium">{displayPhone}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 w-full mt-6 relative z-10">
+                      <button onClick={() => handleComplete(customer.id)} className="flex-1 h-14 bg-emerald-500 hover:bg-emerald-400 text-white font-black rounded-xl transition-all active:scale-[0.98] text-lg flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20">
+                        <Check className="w-5 h-5" /> Terminer la coupe
+                      </button>
+                      <button onClick={() => handleCancel(customer.id)} className="w-14 h-14 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center shrink-0 border border-white/10">
+                        <UserX className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              // WAITING QUEUE CARDS (Position #2 and beyond)
               return (
                 <div 
                   key={customer.id} 
@@ -544,12 +563,10 @@ export default function Dashboard() {
                         : 'bg-white border border-slate-100'
                   }`}
                 >
-                  
-                  {/* Customer Info Row */}
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
-                        isConfirmed ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : isAlerted ? 'bg-orange-100 border-orange-200 text-orange-700' : 'bg-amber-50 border-amber-100/50 text-amber-600'
+                        isConfirmed ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : isAlerted ? 'bg-orange-100 border-orange-200 text-orange-700' : 'bg-slate-100 border-slate-200 text-slate-600'
                       }`}>
                         <span className="font-black text-lg">#{index + 1}</span>
                       </div>
@@ -565,7 +582,6 @@ export default function Dashboard() {
                             </>
                           )}
                           
-                          {/* UBER METHOD BADGES */}
                           {isConfirmed && (
                             <span className="ml-1 flex items-center text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full animate-in fade-in zoom-in duration-300">
                               <CheckCircle2 className="w-3 h-3 mr-0.5" /> En route
@@ -581,10 +597,7 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Thumb-friendly Action Buttons */}
                   <div className="flex flex-col gap-2 w-full mt-1">
-                    
-                    {/* Dynamic Timer/Alert Button Logic */}
                     {displayPhone !== 'Sur place' && (
                       <>
                         {isConfirmed ? (
@@ -626,7 +639,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* NATIVE SETTINGS SECTION */}
         <div className="mt-12 pt-8 border-t border-slate-200/60">
           <h2 className="text-xl font-black text-slate-900 mb-4 tracking-tight flex items-center gap-2">
             <Settings className="w-5 h-5 text-slate-400" /> Outils du Salon
@@ -634,8 +646,6 @@ export default function Dashboard() {
 
           <div className="bg-white p-5 sm:p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6">
             <form onSubmit={handleUpdateProfile} className="space-y-4">
-              
-              {/* Native Input: Image */}
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all relative overflow-hidden flex items-center gap-4">
                 <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploadingImage} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                 <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm shrink-0">
@@ -652,7 +662,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Native Input: Maps */}
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all">
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Lien Google Maps</label>
                 <div className="flex items-center gap-2">
@@ -667,7 +676,6 @@ export default function Dashboard() {
             </form>
           </div>
 
-          {/* NATIVE VIP POSTER CARD */}
           {!isLoading && shareLink && (
             <div className="bg-slate-900 p-6 rounded-[2rem] shadow-xl relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
@@ -696,7 +704,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Walk-in Modal */}
         {showWalkInModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 sm:p-8 shadow-2xl relative animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
@@ -723,7 +730,6 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* STICKY BOTTOM ACTION BAR */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-slate-100 z-40 pb-8 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
         <button 
           onClick={() => setShowWalkInModal(true)}

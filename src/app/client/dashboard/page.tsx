@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { LogOut, Scissors, MapPin, Clock, Timer, CheckCircle2, AlertCircle, X, Navigation, BellRing } from 'lucide-react';
+import { LogOut, Scissors, MapPin, Timer, CheckCircle2, AlertCircle, X, Navigation, BellRing } from 'lucide-react';
 
 export default function ClientDashboard() {
   const [user, setUser] = useState<any>(null);
@@ -14,7 +14,7 @@ export default function ClientDashboard() {
   const [isConfirming, setIsConfirming] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
   
-  // NEW: Audio State
+  // Audio State
   const [soundEnabled, setSoundEnabled] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const hasPlayedAlertSound = useRef(false);
@@ -73,7 +73,7 @@ export default function ClientDashboard() {
       setPosition(currentPos);
       prevPosition.current = currentPos;
 
-      // ✨ NEW: The Audio Trigger Logic
+      // The Audio Trigger Logic
       if (queueData.alerted_at && !queueData.is_confirmed) {
         // If the barber alerted them, and we haven't played the sound yet
         if (!hasPlayedAlertSound.current && soundEnabled && audioRef.current) {
@@ -104,14 +104,14 @@ export default function ClientDashboard() {
       fetchDashboardData();
     }, 5000); // Checks the database every 5 seconds for updates
     return () => clearInterval(interval);
-  }, [user, soundEnabled]); // Added soundEnabled to dependency array
+  }, [user, soundEnabled]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/client/login');
   };
 
-  // ✨ NEW: Function to legally unlock the browser's audio engine
+  // Function to legally unlock the browser's audio engine
   const enableSound = () => {
     if (audioRef.current) {
       audioRef.current.play().catch(() => {});
@@ -127,7 +127,7 @@ export default function ClientDashboard() {
     setIsConfirming(true);
     const toastId = toast.loading("Confirmation en cours...");
 
-    // This updates the new is_confirmed column we just added to the database!
+    // This updates the is_confirmed column
     const { error } = await supabase
       .from('queue')
       .update({ is_confirmed: true })
@@ -194,7 +194,7 @@ export default function ClientDashboard() {
 
       <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-8 pb-10 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
         
-        {/* ✨ NEW: The Sound Unlock Banner */}
+        {/* The Sound Unlock Banner */}
         {!soundEnabled && activeQueue && (
           <div 
             onClick={enableSound}
@@ -252,15 +252,20 @@ export default function ClientDashboard() {
                   </span>
                 </div>
                 
-                {position > 1 && (
-                  <p className="text-slate-500 font-medium flex items-center justify-center gap-1.5">
-                    <Clock className="w-4 h-4 text-blue-500" /> Attente estimée: <strong className="text-slate-900">~{(position - 1) * 20} min</strong>
-                  </p>
+                {/* Position #2 is the very next person to go */}
+                {position === 2 && (
+                  <div className="mt-2">
+                    <p className="text-emerald-600 font-bold flex items-center justify-center gap-1.5 animate-in fade-in slide-in-from-bottom-2">
+                      <CheckCircle2 className="w-4 h-4" /> Vous êtes le prochain !
+                    </p>
+                  </div>
                 )}
+
+                {/* ✂️ POSITION 1: Currently in the chair! */}
                 {position === 1 && !activeQueue.alerted_at && (
-                  <p className="text-emerald-600 font-bold flex items-center justify-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4" /> Vous êtes le prochain !
-                  </p>
+                  <div className="bg-amber-50 text-amber-600 border border-amber-200 px-4 py-2 rounded-full inline-flex items-center justify-center gap-2 mt-2 font-black animate-in zoom-in-95">
+                    <Scissors className="w-4 h-4" /> C'est votre tour !
+                  </div>
                 )}
               </div>
 
@@ -270,15 +275,23 @@ export default function ClientDashboard() {
                 </div>
                 <div>
                   <h3 className="font-black text-lg text-slate-900 leading-tight">{activeQueue.barbers?.shop_name}</h3>
+                  
+                  {/* ✨ THE FIX: Made location a clickable link that opens in a new tab */}
                   {activeQueue.barbers?.location && (
-                    <p className="text-slate-500 text-sm font-medium flex items-center gap-1 mt-0.5">
-                      <MapPin className="w-3 h-3" /> Voir sur la carte
-                    </p>
+                    <a 
+                      href={activeQueue.barbers.location} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:text-blue-600 text-sm font-bold flex items-center gap-1.5 mt-1 transition-colors w-fit group"
+                    >
+                      <MapPin className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" /> 
+                      <span className="underline underline-offset-4">Voir sur la carte</span>
+                    </a>
                   )}
                 </div>
               </div>
 
-              {/* ✨ NEW: The On My Way Button is now perfectly tied to the database */}
+              {/* The On My Way Button */}
               {activeQueue.alerted_at && !activeQueue.is_confirmed ? (
                 <button 
                   onClick={handleConfirmOnMyWay}
