@@ -62,7 +62,7 @@ export default function SmartStorefront() {
       return;
     }
 
-    // SCENARIO B: User IS logged in. Book them instantly!
+    // SCENARIO B: User IS logged in. Book them!
     setIsBooking(true);
     const toastId = toast.loading("Réservation en cours...", { style: { borderRadius: '12px' } });
 
@@ -73,17 +73,25 @@ export default function SmartStorefront() {
       .eq('id', user.id)
       .single();
 
+    // ✨ THE SAFETY NET: If they are a Ghost User, log them out and force a proper signup
+    if (!customerData) {
+      toast.error("Profil incomplet. Veuillez recréer votre compte.", { id: toastId, duration: 4000 });
+      await supabase.auth.signOut();
+      localStorage.setItem('pending_booking_barber_id', barberId);
+      router.push('/client/signup');
+      return;
+    }
+
     // Insert them into the queue
     const { error } = await supabase.from('queue').insert([{
       barber_id: barberId,
       customer_id: user.id, 
-      customer_name: customerData?.full_name || 'Client', 
-      whatsapp_number: customerData?.phone_number || '', 
+      customer_name: customerData.full_name, 
+      whatsapp_number: customerData.phone_number, 
       status: 'waiting'
     }]);
 
     if (error) {
-      // ✨ FIX: Show the EXACT database error so we stop guessing
       console.error("Supabase Booking Error:", error);
       toast.error(`Erreur DB: ${error.message}`, { id: toastId, duration: 6000 });
       setIsBooking(false);
@@ -133,7 +141,6 @@ export default function SmartStorefront() {
           )}
           <h1 className="text-3xl font-black text-white tracking-tight leading-none mb-2">{barber.shop_name}</h1>
           
-          {/* ✨ FIX: Clickable Google Maps Link */}
           {barber.location ? (
             <a 
               href={barber.location} 
