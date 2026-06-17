@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'react-hot-toast';
-import { User, Phone, Mail, Lock, ArrowRight, Scissors, Eye, EyeOff, ChevronLeft } from 'lucide-react';
+import { User, Phone, Mail, Lock, Scissors, Eye, EyeOff, ChevronLeft } from 'lucide-react';
 
 export default function ClientSignup() {
   const [fullName, setFullName] = useState('');
@@ -44,32 +44,16 @@ export default function ClientSignup() {
         console.error("Profile DB Error:", dbError);
         toast.error(`Erreur Profil: ${dbError.message}`, { id: toastId });
       } else {
-        // ✨ THE FIX: Strict Auto-Booking with Error Catching
+        // ✨ THE FIX: Stop auto-booking and redirect to barber profile
         const pendingBarberId = localStorage.getItem('pending_booking_barber_id');
         
         if (pendingBarberId) {
-          toast.loading("Réservation de votre place...", { id: toastId });
-          
-          const { error: queueError } = await supabase.from('queue').insert([{
-            barber_id: pendingBarberId,
-            customer_id: authData.user.id,
-            customer_name: fullName,
-            whatsapp_number: phone,
-            status: 'waiting'
-          }]);
-
-          if (queueError) {
-            console.error("Auto-Book Error:", queueError);
-            toast.error(`Compte créé, mais la réservation a échoué.`, { id: toastId, duration: 5000 });
-          } else {
-            localStorage.removeItem('pending_booking_barber_id');
-            toast.success("Compte créé et place réservée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
-          }
+          toast.success("Compte créé !", { id: toastId });
+          router.push(`/q/${pendingBarberId}`); 
         } else {
           toast.success("Compte créé avec succès !", { id: toastId });
+          router.push('/client/dashboard'); 
         }
-        
-        router.push('/client/dashboard'); 
       }
     }
     setIsLoading(false);

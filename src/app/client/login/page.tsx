@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'react-hot-toast';
-import { Mail, Lock, ArrowRight, Scissors, Eye, EyeOff, ChevronLeft } from 'lucide-react';
+import { Mail, Lock, Scissors, Eye, EyeOff, ChevronLeft } from 'lucide-react';
 
 export default function ClientLogin() {
   const [email, setEmail] = useState('');
@@ -30,40 +30,16 @@ export default function ClientLogin() {
     }
 
     if (authData.user) {
-      // ✨ THE FIX: Check if they just scanned a QR code before logging in
+      // ✨ FIX: Stop auto-booking and redirect to barber profile
       const pendingBarberId = localStorage.getItem('pending_booking_barber_id');
       
       if (pendingBarberId) {
-        toast.loading("Réservation de votre place...", { id: toastId });
-        
-        // We need to fetch their name/phone from the DB first
-        const { data: customer } = await supabase
-          .from('customers')
-          .select('*')
-          .eq('id', authData.user.id)
-          .single();
-
-        if (customer) {
-          const { error: queueError } = await supabase.from('queue').insert([{
-            barber_id: pendingBarberId,
-            customer_id: authData.user.id,
-            customer_name: customer.full_name,
-            whatsapp_number: customer.phone_number,
-            status: 'waiting'
-          }]);
-
-          if (queueError) {
-            toast.error("Connecté, mais erreur de réservation.", { id: toastId });
-          } else {
-            localStorage.removeItem('pending_booking_barber_id');
-            toast.success("Place réservée avec succès !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
-          }
-        }
+        toast.success("Connexion réussie !", { id: toastId });
+        router.push(`/q/${pendingBarberId}`); 
       } else {
         toast.success("Bon retour !", { id: toastId });
+        router.push('/client/dashboard');
       }
-
-      router.push('/client/dashboard');
     }
     
     setIsLoading(false);

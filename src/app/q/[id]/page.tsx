@@ -55,8 +55,23 @@ export default function SmartStorefront() {
     }
 
     setIsBooking(true);
-    const toastId = toast.loading("Réservation en cours...", { style: { borderRadius: '12px' } });
+    const toastId = toast.loading("Vérification...", { style: { borderRadius: '12px' } });
 
+    // ✨ FIX: Safety check! Is the user already in a queue?
+    const { data: existingTicket } = await supabase
+      .from('queue')
+      .select('id')
+      .eq('customer_id', user.id)
+      .eq('status', 'waiting')
+      .maybeSingle();
+
+    if (existingTicket) {
+      toast.error("Vous êtes déjà dans une file d'attente !", { id: toastId, duration: 4000 });
+      router.push('/client/dashboard');
+      return;
+    }
+
+    // If they are not in the queue, fetch their profile and book them
     const { data: customerData } = await supabase
       .from('customers')
       .select('*')
@@ -84,6 +99,7 @@ export default function SmartStorefront() {
       toast.error(`Erreur DB: ${error.message}`, { id: toastId, duration: 6000 });
       setIsBooking(false);
     } else {
+      localStorage.removeItem('pending_booking_barber_id'); // Clear memory just in case
       toast.success("Place réservée avec succès !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
       router.push('/client/dashboard');
     }
@@ -114,9 +130,8 @@ export default function SmartStorefront() {
   return (
     <div className="min-h-[100dvh] bg-zinc-50 flex flex-col relative font-sans selection:bg-zinc-200">
       
-      {/* NEW HERO: Premium Barbershop Aesthetic */}
+      {/* PREMIUM HERO */}
       <div className="h-[45vh] w-full bg-zinc-950 relative flex flex-col items-center justify-center px-6 overflow-hidden">
-        {/* Subtle background glow */}
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-zinc-800/40 via-zinc-950 to-zinc-950"></div>
         
         <div className="relative z-10 flex flex-col items-center text-center mt-4">
@@ -131,7 +146,6 @@ export default function SmartStorefront() {
               </div>
             )}
             
-            {/* Status Indicator Dot attached to profile */}
             <div className={`absolute bottom-1 right-1 w-6 h-6 rounded-full border-4 border-zinc-950 ${barber.is_open ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
           </div>
 
@@ -154,7 +168,7 @@ export default function SmartStorefront() {
         </div>
       </div>
 
-      {/* NEW CONTENT SECTION */}
+      {/* QUEUE CONTENT SECTION */}
       <div className="flex-1 bg-zinc-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-6 pt-10 pb-32 shadow-[0_-10px_40px_rgba(0,0,0,0.3)]">
         
         {!barber.is_open && (
@@ -163,9 +177,7 @@ export default function SmartStorefront() {
           </div>
         )}
 
-        {/* REDESIGNED QUEUE CARD: Focus strictly on the number */}
         <div className="bg-white p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-zinc-100 flex flex-col items-center justify-center mb-6 relative overflow-hidden">
-          {/* Subtle background icon */}
           <div className="absolute -right-8 -bottom-8 opacity-[0.02] pointer-events-none">
             <Users className="w-48 h-48" />
           </div>
@@ -184,7 +196,7 @@ export default function SmartStorefront() {
 
       </div>
 
-      {/* NEW BOTTOM ACTION BAR: Dark Premium Theme */}
+      {/* BOTTOM ACTION BAR */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-zinc-100 z-50 pb-8">
         <button 
           onClick={handleAction} 

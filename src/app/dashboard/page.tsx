@@ -9,13 +9,12 @@ type Customer = {
   id: string;
   customer_name: string;
   whatsapp_number: string;
-  notified?: boolean;
   alerted_at?: string;
   is_confirmed?: boolean;
   customers?: { full_name: string; phone_number: string };
 };
 
-// NEW: Helper to format the countdown timer
+// Helper to format the countdown timer
 const formatTime = (seconds: number) => {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
@@ -54,7 +53,7 @@ export default function Dashboard() {
   
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  // NEW: State to hold the live countdown timers for each customer
+  // State to hold the live countdown timers for each customer
   const [timers, setTimers] = useState<Record<string, number>>({});
 
   const router = useRouter();
@@ -62,7 +61,7 @@ export default function Dashboard() {
   // MAGIC UX: Memory reference to track who already "dinged"
   const confirmedIds = useRef<Set<string>>(new Set());
 
-  // NEW: Effect to tick down the timers every second
+  // Effect to tick down the timers every second
   useEffect(() => {
     const interval = setInterval(() => {
       setTimers(prev => {
@@ -95,7 +94,7 @@ export default function Dashboard() {
           confirmedIds.current.add(customer.id); // Remember them so we don't beep again
         }
 
-        // NEW: Initialize timers for clients who were alerted but haven't confirmed yet
+        // Initialize timers for clients who were alerted but haven't confirmed yet
         if (customer.alerted_at && !customer.is_confirmed && !timers[customer.id]) {
           const elapsed = Math.floor((new Date().getTime() - new Date(customer.alerted_at).getTime()) / 1000);
           const remaining = Math.max(0, 600 - elapsed); // 10 minutes (600s)
@@ -281,14 +280,14 @@ export default function Dashboard() {
     try {
       const sendName = customer.customers?.full_name || customer.customer_name;
 
+      // FIXED: Removed the 'notified: true' update to prevent the crash
       const { error } = await supabase.from('queue').update({ 
-        alerted_at: new Date().toISOString(),
-        notified: true 
+        alerted_at: new Date().toISOString()
       }).eq('id', customer.id);
 
       if (error) throw error;
 
-      // NEW: Start the 10-minute timer locally
+      // Start the 10-minute timer locally
       setTimers(prev => ({ ...prev, [customer.id]: 600 })); 
 
       toast.success(`Alerte envoyée sur l'app à ${sendName.split(' ')[0]} !`, { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
@@ -585,7 +584,7 @@ export default function Dashboard() {
                   {/* Thumb-friendly Action Buttons */}
                   <div className="flex flex-col gap-2 w-full mt-1">
                     
-                    {/* NEW: Dynamic Timer/Alert Button Logic */}
+                    {/* Dynamic Timer/Alert Button Logic */}
                     {displayPhone !== 'Sur place' && (
                       <>
                         {isConfirmed ? (
