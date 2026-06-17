@@ -20,6 +20,7 @@ export default function ClientSignup() {
     setIsLoading(true);
     const toastId = toast.loading("Création de votre compte...");
 
+    // 1. Create Auth User
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
@@ -32,6 +33,7 @@ export default function ClientSignup() {
     }
 
     if (authData.user) {
+      // 2. Save Customer Profile
       const { error: dbError } = await supabase.from('customers').insert([{
         id: authData.user.id,
         full_name: fullName,
@@ -39,24 +41,32 @@ export default function ClientSignup() {
       }]);
 
       if (dbError) {
-        toast.error(`Erreur DB: ${dbError.message}`, { id: toastId });
+        console.error("Profile DB Error:", dbError);
+        toast.error(`Erreur Profil: ${dbError.message}`, { id: toastId });
       } else {
-        // ✨ THE MAGIC: Check for pending booking
+        // ✨ THE FIX: Strict Auto-Booking with Error Catching
         const pendingBarberId = localStorage.getItem('pending_booking_barber_id');
         
         if (pendingBarberId) {
-          // Auto-book them
-          await supabase.from('queue').insert([{
+          toast.loading("Réservation de votre place...", { id: toastId });
+          
+          const { error: queueError } = await supabase.from('queue').insert([{
             barber_id: pendingBarberId,
             customer_id: authData.user.id,
             customer_name: fullName,
             whatsapp_number: phone,
             status: 'waiting'
           }]);
-          localStorage.removeItem('pending_booking_barber_id');
-          toast.success("Compte créé et place réservée !", { id: toastId });
+
+          if (queueError) {
+            console.error("Auto-Book Error:", queueError);
+            toast.error(`Compte créé, mais la réservation a échoué.`, { id: toastId, duration: 5000 });
+          } else {
+            localStorage.removeItem('pending_booking_barber_id');
+            toast.success("Compte créé et place réservée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
+          }
         } else {
-          toast.success("Compte créé !", { id: toastId });
+          toast.success("Compte créé avec succès !", { id: toastId });
         }
         
         router.push('/client/dashboard'); 
@@ -108,6 +118,14 @@ export default function ClientSignup() {
             {isLoading ? "Chargement..." : "Créer mon compte"}
           </button>
         </form>
+        <div className="mt-8 text-center">
+          <p className="text-slate-500 font-medium text-sm">
+            Déjà client ?{' '}
+            <Link href="/client/login" className="text-blue-600 font-bold hover:underline">
+              Se connecter
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );

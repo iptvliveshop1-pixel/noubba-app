@@ -17,7 +17,6 @@ export default function ClientDashboard() {
   const router = useRouter();
   const prevPosition = useRef<number>(0);
 
-  // 1. Fetch User & Active Queue
   const fetchDashboardData = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
@@ -26,22 +25,23 @@ export default function ClientDashboard() {
     }
     setUser(session.user);
 
-    // Get customer profile
     const { data: customer } = await supabase.from('customers').select('*').eq('id', session.user.id).single();
     if (customer) setCustomerName(customer.full_name);
 
-    // Find if they are currently waiting in any queue
-    const { data: queueData } = await supabase
+    // ✨ THE FIX: Replaced .single() with .order().limit(1) to prevent crashes if there are duplicate tickets
+    const { data: queueDataArray } = await supabase
       .from('queue')
       .select('*, barbers(shop_name, location)')
       .eq('customer_id', session.user.id)
       .eq('status', 'waiting')
-      .single();
+      .order('joined_at', { ascending: false })
+      .limit(1);
+
+    const queueData = queueDataArray?.[0] || null;
 
     if (queueData) {
       setActiveQueue(queueData);
       
-      // Calculate exact position (count people waiting at this barber who joined before or at the same time)
       const { count } = await supabase
         .from('queue')
         .select('*', { count: 'exact', head: true })
@@ -51,7 +51,6 @@ export default function ClientDashboard() {
 
       const currentPos = count || 1;
       
-      // Trigger a success toast if their position dropped!
       if (prevPosition.current > 0 && currentPos < prevPosition.current) {
         toast.success("La file avance ! C'est bientôt à vous.", { 
           icon: '🚀', 
@@ -73,7 +72,6 @@ export default function ClientDashboard() {
     fetchDashboardData();
   }, []);
 
-  // 2. The Uber-Style 5-Second Auto Refresh
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(() => {
@@ -134,11 +132,8 @@ export default function ClientDashboard() {
 
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-blue-200">
-      
-      {/* NATIVE HERO SECTION */}
       <div className="h-[25vh] w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-900/40 via-slate-900 to-black"></div>
-        
         <div className="absolute top-4 sm:top-6 w-full left-0 px-4 flex justify-between items-center z-20">
           <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
             <Scissors className="w-5 h-5 text-white" />
@@ -147,7 +142,6 @@ export default function ClientDashboard() {
             <LogOut className="w-4 h-4" />
           </button>
         </div>
-
         <div className="relative z-10 mt-6">
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-none mb-1">
             Bonjour, {customerName ? customerName.split(' ')[0] : 'Client'}
@@ -156,11 +150,8 @@ export default function ClientDashboard() {
         </div>
       </div>
 
-      {/* OVERLAPPING BOTTOM SHEET */}
       <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-8 pb-10 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
-
         {!activeQueue ? (
-          /* EMPTY STATE */
           <div className="bg-white p-10 rounded-[2rem] shadow-sm border border-slate-100 text-center mt-4">
             <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
               <Timer className="w-8 h-8 text-slate-300" />
@@ -169,7 +160,6 @@ export default function ClientDashboard() {
             <p className="text-sm text-slate-500 font-medium mb-6">Scannez le QR Code de votre coiffeur préféré pour prendre votre place.</p>
           </div>
         ) : (
-          /* ACTIVE QUEUE CARD */
           <div className={`rounded-[2rem] p-1 shadow-lg transition-colors duration-500 ${
             activeQueue.alerted_at && !activeQueue.is_confirmed 
               ? 'bg-gradient-to-b from-orange-400 to-orange-500 shadow-orange-500/20' 
@@ -178,13 +168,10 @@ export default function ClientDashboard() {
                 : 'bg-gradient-to-b from-blue-600 to-blue-800 shadow-blue-600/20'
           }`}>
             <div className="bg-white rounded-[1.8rem] p-6 relative overflow-hidden">
-              
-              {/* Background Icon */}
               <div className="absolute -right-6 -top-6 opacity-[0.03] pointer-events-none">
                 <Scissors className="w-48 h-48" />
               </div>
 
-              {/* Status Banner */}
               {activeQueue.alerted_at && !activeQueue.is_confirmed && (
                 <div className="bg-orange-50 border border-orange-200 text-orange-700 p-3 rounded-xl flex items-center gap-3 mb-6 animate-pulse">
                   <AlertCircle className="w-5 h-5 shrink-0" />
@@ -195,10 +182,9 @@ export default function ClientDashboard() {
               <div className="text-center border-b border-slate-100 pb-6 mb-6">
                 <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Votre Position</h2>
                 
-                {/* THE ANIMATED NUMBER */}
                 <div className="flex justify-center items-center h-24 overflow-hidden my-2">
                   <span 
-                    key={position} // This key forces a re-render/animation every time the number changes
+                    key={position} 
                     className="text-7xl font-black text-slate-900 tracking-tighter animate-in slide-in-from-top-8 fade-in duration-500"
                   >
                     #{position}
@@ -231,7 +217,6 @@ export default function ClientDashboard() {
                 </div>
               </div>
 
-              {/* DYNAMIC ACTION BUTTONS */}
               {activeQueue.alerted_at && !activeQueue.is_confirmed ? (
                 <button 
                   onClick={handleConfirmOnMyWay}
