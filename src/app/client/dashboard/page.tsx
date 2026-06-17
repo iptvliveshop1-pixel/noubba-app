@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { LogOut, Scissors, MapPin, Clock, Timer, CheckCircle2, AlertCircle, X, Navigation } from 'lucide-react';
+import { LogOut, Scissors, MapPin, Clock, Timer, CheckCircle2, AlertCircle, X, Navigation, BellRing } from 'lucide-react';
 
 export default function ClientDashboard() {
   const [user, setUser] = useState<any>(null);
@@ -13,6 +13,11 @@ export default function ClientDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isConfirming, setIsConfirming] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
+  
+  // NEW: Audio State
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const hasPlayedAlertSound = useRef(false);
   
   const router = useRouter();
   const prevPosition = useRef<number>(0);
@@ -28,8 +33,6 @@ export default function ClientDashboard() {
     const { data: customer } = await supabase.from('customers').select('*').eq('id', session.user.id).single();
     if (customer) setCustomerName(customer.full_name);
 
-    // ✨ THE FIX: We separate the queries to prevent database Join Errors!
-    // 1. Fetch the ticket first
     const { data: queueDataArray, error: queueError } = await supabase
       .from('queue')
       .select('*')
@@ -38,14 +41,11 @@ export default function ClientDashboard() {
       .order('joined_at', { ascending: false })
       .limit(1);
 
-    if (queueError) {
-      console.error("Dashboard Queue Fetch Error:", queueError);
-    }
+    if (queueError) console.error("Dashboard Queue Fetch Error:", queueError);
 
     const queueData = queueDataArray?.[0] || null;
 
     if (queueData) {
-      // 2. Then fetch the Barber details
       const { data: barberData } = await supabase
         .from('barbers')
         .select('shop_name, location')
@@ -54,7 +54,6 @@ export default function ClientDashboard() {
         
       setActiveQueue({ ...queueData, barbers: barberData || { shop_name: 'Salon' } });
       
-      // 3. Calculate position
       const { count } = await supabase
         .from('queue')
         .select('*', { count: 'exact', head: true })
@@ -73,9 +72,23 @@ export default function ClientDashboard() {
       
       setPosition(currentPos);
       prevPosition.current = currentPos;
+
+      // ✨ NEW: The Audio Trigger Logic
+      if (queueData.alerted_at && !queueData.is_confirmed) {
+        // If the barber alerted them, and we haven't played the sound yet
+        if (!hasPlayedAlertSound.current && soundEnabled && audioRef.current) {
+          audioRef.current.play().catch(e => console.error("Audio blocked by browser:", e));
+          hasPlayedAlertSound.current = true; // Prevent the sound from looping every 5 seconds
+        }
+      } else {
+        // Reset the trigger if they aren't alerted yet
+        hasPlayedAlertSound.current = false;
+      }
+
     } else {
       setActiveQueue(null);
       setPosition(0);
+      hasPlayedAlertSound.current = false;
     }
     
     setIsLoading(false);
@@ -89,13 +102,24 @@ export default function ClientDashboard() {
     if (!user) return;
     const interval = setInterval(() => {
       fetchDashboardData();
-    }, 5000);
+    }, 5000); // Checks the database every 5 seconds for updates
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, soundEnabled]); // Added soundEnabled to dependency array
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/client/login');
+  };
+
+  // ✨ NEW: Function to legally unlock the browser's audio engine
+  const enableSound = () => {
+    if (audioRef.current) {
+      audioRef.current.play().catch(() => {});
+      audioRef.current.pause(); // Play and immediately pause to unlock the API
+      audioRef.current.currentTime = 0;
+    }
+    setSoundEnabled(true);
+    toast.success("Alertes sonores activées !", { style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
   };
 
   const handleConfirmOnMyWay = async () => {
@@ -103,6 +127,7 @@ export default function ClientDashboard() {
     setIsConfirming(true);
     const toastId = toast.loading("Confirmation en cours...");
 
+    // This updates the new is_confirmed column we just added to the database!
     const { error } = await supabase
       .from('queue')
       .update({ is_confirmed: true })
@@ -145,6 +170,10 @@ export default function ClientDashboard() {
 
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-blue-200">
+      
+      {/* Hidden Audio Player using your local ding.mp3 file */}
+      <audio ref={audioRef} src="/ding.mp3" preload="auto" />
+
       <div className="h-[25vh] w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-900/40 via-slate-900 to-black"></div>
         <div className="absolute top-4 sm:top-6 w-full left-0 px-4 flex justify-between items-center z-20">
@@ -164,6 +193,25 @@ export default function ClientDashboard() {
       </div>
 
       <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-8 pb-10 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
+        
+        {/* ✨ NEW: The Sound Unlock Banner */}
+        {!soundEnabled && activeQueue && (
+          <div 
+            onClick={enableSound}
+            className="bg-blue-600 text-white p-4 rounded-2xl mb-6 shadow-lg shadow-blue-600/20 cursor-pointer flex justify-between items-center transition-transform active:scale-[0.98]"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+                <BellRing className="w-5 h-5 animate-pulse" />
+              </div>
+              <div className="leading-tight">
+                <p className="font-bold text-sm">Activer les alertes</p>
+                <p className="text-blue-200 text-xs font-medium mt-0.5">Pour être prévenu quand c'est votre tour</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {!activeQueue ? (
           <div className="bg-white p-10 rounded-[2rem] shadow-sm border border-slate-100 text-center mt-4">
             <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -230,6 +278,7 @@ export default function ClientDashboard() {
                 </div>
               </div>
 
+              {/* ✨ NEW: The On My Way Button is now perfectly tied to the database */}
               {activeQueue.alerted_at && !activeQueue.is_confirmed ? (
                 <button 
                   onClick={handleConfirmOnMyWay}

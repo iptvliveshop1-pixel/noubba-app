@@ -15,6 +15,13 @@ type Customer = {
   customers?: { full_name: string; phone_number: string };
 };
 
+// NEW: Helper to format the countdown timer
+const formatTime = (seconds: number) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
 export default function Dashboard() {
   const [queue, setQueue] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -47,10 +54,27 @@ export default function Dashboard() {
   
   const [uploadingImage, setUploadingImage] = useState(false);
 
+  // NEW: State to hold the live countdown timers for each customer
+  const [timers, setTimers] = useState<Record<string, number>>({});
+
   const router = useRouter();
 
   // MAGIC UX: Memory reference to track who already "dinged"
   const confirmedIds = useRef<Set<string>>(new Set());
+
+  // NEW: Effect to tick down the timers every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimers(prev => {
+        const next = { ...prev };
+        Object.keys(next).forEach(id => {
+          if (next[id] > 0) next[id] -= 1;
+        });
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // SEPARATED FETCH QUEUE FUNCTION FOR THE AUTO-REFRESH
   const fetchQueueOnly = async (bId: string) => {
@@ -69,6 +93,13 @@ export default function Dashboard() {
         if (customer.is_confirmed && !confirmedIds.current.has(customer.id)) {
           shouldPlaySound = true;
           confirmedIds.current.add(customer.id); // Remember them so we don't beep again
+        }
+
+        // NEW: Initialize timers for clients who were alerted but haven't confirmed yet
+        if (customer.alerted_at && !customer.is_confirmed && !timers[customer.id]) {
+          const elapsed = Math.floor((new Date().getTime() - new Date(customer.alerted_at).getTime()) / 1000);
+          const remaining = Math.max(0, 600 - elapsed); // 10 minutes (600s)
+          setTimers(prev => ({ ...prev, [customer.id]: remaining }));
         }
       });
 
@@ -250,14 +281,15 @@ export default function Dashboard() {
     try {
       const sendName = customer.customers?.full_name || customer.customer_name;
 
-      // PURE UBER METHOD: We just trigger the timer in the database!
-      // This instantly updates the customer's dashboard screen.
       const { error } = await supabase.from('queue').update({ 
         alerted_at: new Date().toISOString(),
         notified: true 
       }).eq('id', customer.id);
 
       if (error) throw error;
+
+      // NEW: Start the 10-minute timer locally
+      setTimers(prev => ({ ...prev, [customer.id]: 600 })); 
 
       toast.success(`Alerte envoyée sur l'app à ${sendName.split(' ')[0]} !`, { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
       if (barberId) fetchQueueOnly(barberId); // Instant refresh
@@ -306,7 +338,6 @@ export default function Dashboard() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // FIX #2: Updated shareLink to point to the unbreakable /q/[id] route
   const shopSlug = ownerName ? ownerName.toLowerCase().replace(/\s+/g, '-') : 'salon';
   const shareLink = origin && barberId ? `${origin}/q/${barberId}` : '';
   const qrCodeUrl = shareLink ? `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(shareLink)}&color=0f172a&bgcolor=ffffff` : '';
@@ -501,6 +532,7 @@ export default function Dashboard() {
               const isConfirmed = customer.is_confirmed;
               const displayName = customer.customers?.full_name || customer.customer_name;
               const displayPhone = customer.customers?.phone_number || customer.whatsapp_number;
+              const timeRemaining = timers[customer.id] || 0;
 
               return (
                 <div 
@@ -552,20 +584,34 @@ export default function Dashboard() {
 
                   {/* Thumb-friendly Action Buttons */}
                   <div className="flex flex-col gap-2 w-full mt-1">
-                    {/* Hide Alert button if already alerted or if walk-in */}
-                    {!isAlerted && displayPhone !== 'Sur place' && (
-                      <button 
-                        onClick={() => handleNotify(customer)} 
-                        disabled={isSendingAuth === customer.id} 
-                        className="w-full h-12 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all active:scale-[0.98] disabled:opacity-50 text-sm"
-                      >
-                        {isSendingAuth === customer.id ? (
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    
+                    {/* NEW: Dynamic Timer/Alert Button Logic */}
+                    {displayPhone !== 'Sur place' && (
+                      <>
+                        {isConfirmed ? (
+                          <div className="w-full h-12 bg-emerald-100 text-emerald-700 border border-emerald-200 font-black rounded-xl transition-all flex items-center justify-center gap-2 mb-1">
+                            <CheckCircle2 className="w-5 h-5" /> Le client est en route !
+                          </div>
+                        ) : isAlerted ? (
+                          <button disabled className={`w-full h-12 mb-1 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm ${timeRemaining > 0 ? 'bg-orange-500 text-white shadow-orange-500/20' : 'bg-red-500 text-white shadow-red-500/20'}`}>
+                            <Timer className="w-5 h-5" /> {timeRemaining > 0 ? formatTime(timeRemaining) : "Temps écoulé"}
+                          </button>
                         ) : (
-                          <><Bell className="w-4 h-4 text-amber-400" /> Alerter le client (App)</>
+                          <button 
+                            onClick={() => handleNotify(customer)} 
+                            disabled={isSendingAuth === customer.id} 
+                            className="w-full h-12 mb-1 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all active:scale-[0.98] disabled:opacity-50 text-sm"
+                          >
+                            {isSendingAuth === customer.id ? (
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                            ) : (
+                              <><Bell className="w-4 h-4 text-amber-400" /> Alerter le client (App)</>
+                            )}
+                          </button>
                         )}
-                      </button>
+                      </>
                     )}
+
                     <div className="flex gap-2 w-full">
                       <button onClick={() => handleComplete(customer.id)} className={`flex-1 h-12 flex items-center justify-center gap-2 font-bold rounded-xl transition-all active:scale-[0.98] text-sm ${isConfirmed ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}>
                         <Check className="w-4 h-4" /> Terminé
