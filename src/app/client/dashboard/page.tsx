@@ -28,20 +28,33 @@ export default function ClientDashboard() {
     const { data: customer } = await supabase.from('customers').select('*').eq('id', session.user.id).single();
     if (customer) setCustomerName(customer.full_name);
 
-    // ✨ THE FIX: Replaced .single() with .order().limit(1) to prevent crashes if there are duplicate tickets
-    const { data: queueDataArray } = await supabase
+    // ✨ THE FIX: We separate the queries to prevent database Join Errors!
+    // 1. Fetch the ticket first
+    const { data: queueDataArray, error: queueError } = await supabase
       .from('queue')
-      .select('*, barbers(shop_name, location)')
+      .select('*')
       .eq('customer_id', session.user.id)
       .eq('status', 'waiting')
       .order('joined_at', { ascending: false })
       .limit(1);
 
+    if (queueError) {
+      console.error("Dashboard Queue Fetch Error:", queueError);
+    }
+
     const queueData = queueDataArray?.[0] || null;
 
     if (queueData) {
-      setActiveQueue(queueData);
+      // 2. Then fetch the Barber details
+      const { data: barberData } = await supabase
+        .from('barbers')
+        .select('shop_name, location')
+        .eq('id', queueData.barber_id)
+        .single();
+        
+      setActiveQueue({ ...queueData, barbers: barberData || { shop_name: 'Salon' } });
       
+      // 3. Calculate position
       const { count } = await supabase
         .from('queue')
         .select('*', { count: 'exact', head: true })
