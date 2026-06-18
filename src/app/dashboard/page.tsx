@@ -7,6 +7,7 @@ import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Do
 
 type Customer = {
   id: string;
+  customer_id?: string; // ✨ ADDED FOR PUSH NOTIFICATIONS
   customer_name: string;
   whatsapp_number: string;
   alerted_at?: string;
@@ -260,6 +261,7 @@ export default function Dashboard() {
     }
   };
 
+  // ✨ THE UPDATED PUSH NOTIFICATION FUNCTION
   const handleNotify = async (customer: Customer) => {
     setIsSendingAuth(customer.id);
     const toastId = toast.loading("Alerte en cours...", { style: { borderRadius: '12px' }}); 
@@ -274,6 +276,19 @@ export default function Dashboard() {
       if (error) throw error;
 
       setTimers(prev => ({ ...prev, [customer.id]: 600 })); 
+
+      // 🔥 THE NEW API CALL: Wake up the client's phone!
+      if (customer.customer_id) {
+        fetch('/api/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customerId: customer.customer_id,
+            title: "C'est bientôt à vous ! ✂️",
+            body: `Le salon ${shopName} vous attend. Cliquez ici pour confirmer !`
+          })
+        }).catch(err => console.error("Push API failed:", err));
+      }
 
       toast.success(`Alerte envoyée sur l'app à ${sendName.split(' ')[0]} !`, { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
       if (barberId) fetchQueueOnly(barberId); 

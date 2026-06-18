@@ -3,18 +3,30 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { LogOut, Scissors, MapPin, Timer, CheckCircle2, AlertCircle, X, Navigation, BellRing } from 'lucide-react';
+import { LogOut, Scissors, MapPin, Timer, CheckCircle2, AlertCircle, X, Navigation, BellRing, Store } from 'lucide-react';
+
+// Helper function required to encrypt the VAPID key for Apple/Google
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 export default function ClientDashboard() {
   const [user, setUser] = useState<any>(null);
   const [customerName, setCustomerName] = useState('');
   const [activeQueue, setActiveQueue] = useState<any>(null);
+  const [recentBarber, setRecentBarber] = useState<any>(null); 
   const [position, setPosition] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isConfirming, setIsConfirming] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
   
-  // Audio State
   const [soundEnabled, setSoundEnabled] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const hasPlayedAlertSound = useRef(false);
@@ -73,15 +85,12 @@ export default function ClientDashboard() {
       setPosition(currentPos);
       prevPosition.current = currentPos;
 
-      // The Audio Trigger Logic
       if (queueData.alerted_at && !queueData.is_confirmed) {
-        // If the barber alerted them, and we haven't played the sound yet
         if (!hasPlayedAlertSound.current && soundEnabled && audioRef.current) {
           audioRef.current.play().catch(e => console.error("Audio blocked by browser:", e));
-          hasPlayedAlertSound.current = true; // Prevent the sound from looping every 5 seconds
+          hasPlayedAlertSound.current = true; 
         }
       } else {
-        // Reset the trigger if they aren't alerted yet
         hasPlayedAlertSound.current = false;
       }
 
@@ -89,6 +98,24 @@ export default function ClientDashboard() {
       setActiveQueue(null);
       setPosition(0);
       hasPlayedAlertSound.current = false;
+
+      const { data: pastVisits } = await supabase
+        .from('queue')
+        .select('barber_id')
+        .eq('customer_id', session.user.id)
+        .order('joined_at', { ascending: false })
+        .limit(1);
+
+      if (pastVisits && pastVisits.length > 0) {
+        const { data: bData } = await supabase
+          .from('barbers')
+          .select('id, shop_name')
+          .eq('id', pastVisits[0].barber_id)
+          .single();
+        setRecentBarber(bData);
+      } else {
+        setRecentBarber(null);
+      }
     }
     
     setIsLoading(false);
@@ -102,7 +129,7 @@ export default function ClientDashboard() {
     if (!user) return;
     const interval = setInterval(() => {
       fetchDashboardData();
-    }, 5000); // Checks the database every 5 seconds for updates
+    }, 5000); 
     return () => clearInterval(interval);
   }, [user, soundEnabled]);
 
@@ -111,15 +138,52 @@ export default function ClientDashboard() {
     router.push('/client/login');
   };
 
-  // Function to legally unlock the browser's audio engine
-  const enableSound = () => {
+  // 🔥 THE NEW SUBSCRIPTION LOGIC
+  const subscribeToPush = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      
+      // Wait for the service worker to be ready
+      await navigator.serviceWorker.ready;
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!)
+      });
+
+      // Save the token to Supabase for this user
+      if (user) {
+        await supabase
+          .from('customers')
+          .update({ push_subscription: subscription })
+          .eq('id', user.id);
+      }
+    } catch (error) {
+      console.error('Push subscription failed:', error);
+    }
+  };
+
+  const enableAlerts = async () => {
+    // 1. Unlock Audio for the ding sound
     if (audioRef.current) {
       audioRef.current.play().catch(() => {});
-      audioRef.current.pause(); // Play and immediately pause to unlock the API
+      audioRef.current.pause(); 
       audioRef.current.currentTime = 0;
     }
     setSoundEnabled(true);
-    toast.success("Alertes sonores activées !", { style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
+
+    // 2. Request Native Push Notifications
+    await subscribeToPush();
+
+    toast.success("Alertes activées !", { style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
+  };
+
+  const handleJoinUsualBarber = async () => {
+    if (!recentBarber) return;
+    // Request permission exactly when they click to join
+    await subscribeToPush();
+    router.push(`/q/${recentBarber.id}`);
   };
 
   const handleConfirmOnMyWay = async () => {
@@ -127,7 +191,6 @@ export default function ClientDashboard() {
     setIsConfirming(true);
     const toastId = toast.loading("Confirmation en cours...");
 
-    // This updates the is_confirmed column
     const { error } = await supabase
       .from('queue')
       .update({ is_confirmed: true })
@@ -156,6 +219,7 @@ export default function ClientDashboard() {
     if (!error) {
       toast("Vous avez quitté la file.", { icon: '👋' });
       setActiveQueue(null);
+      fetchDashboardData();
     }
     setIsCanceling(false);
   };
@@ -171,7 +235,6 @@ export default function ClientDashboard() {
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-blue-200">
       
-      {/* Hidden Audio Player using your local ding.mp3 file */}
       <audio ref={audioRef} src="/ding.mp3" preload="auto" />
 
       <div className="h-[25vh] w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
@@ -194,10 +257,9 @@ export default function ClientDashboard() {
 
       <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-8 pb-10 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
         
-        {/* The Sound Unlock Banner */}
         {!soundEnabled && activeQueue && (
           <div 
-            onClick={enableSound}
+            onClick={enableAlerts}
             className="bg-blue-600 text-white p-4 rounded-2xl mb-6 shadow-lg shadow-blue-600/20 cursor-pointer flex justify-between items-center transition-transform active:scale-[0.98]"
           >
             <div className="flex items-center gap-3">
@@ -213,13 +275,40 @@ export default function ClientDashboard() {
         )}
 
         {!activeQueue ? (
-          <div className="bg-white p-10 rounded-[2rem] shadow-sm border border-slate-100 text-center mt-4">
-            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Timer className="w-8 h-8 text-slate-300" />
+          recentBarber ? (
+            <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100 text-center mt-4 relative overflow-hidden group">
+              <div className="absolute -right-8 -top-8 opacity-[0.02] pointer-events-none group-hover:scale-110 transition-transform duration-500">
+                <Store className="w-48 h-48" />
+              </div>
+              
+              <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-100 shadow-inner">
+                <Store className="w-8 h-8 text-amber-500" />
+              </div>
+              <h3 className="text-xl font-black text-slate-900 mb-1 tracking-tight">Votre salon habituel</h3>
+              <p className="text-sm text-slate-500 font-bold mb-8">{recentBarber.shop_name}</p>
+
+              <button 
+                onClick={handleJoinUsualBarber}
+                className="w-full h-14 bg-slate-900 active:bg-slate-800 hover:bg-slate-800 text-white font-black rounded-xl transition-all shadow-lg shadow-slate-900/20 text-lg flex items-center justify-center gap-2 mb-5 relative z-10"
+              >
+                <Scissors className="w-5 h-5 text-amber-400" /> Prendre ma place
+              </button>
+
+              <div className="pt-5 border-t border-slate-100">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  Nouveau salon ? Scannez un QR Code.
+                </p>
+              </div>
             </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Aucune file en cours</h3>
-            <p className="text-sm text-slate-500 font-medium mb-6">Scannez le QR Code de votre coiffeur préféré pour prendre votre place.</p>
-          </div>
+          ) : (
+            <div className="bg-white p-10 rounded-[2rem] shadow-sm border border-slate-100 text-center mt-4">
+              <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Timer className="w-8 h-8 text-slate-300" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Aucune file en cours</h3>
+              <p className="text-sm text-slate-500 font-medium mb-6">Scannez le QR Code de votre coiffeur préféré pour prendre votre place.</p>
+            </div>
+          )
         ) : (
           <div className={`rounded-[2rem] p-1 shadow-lg transition-colors duration-500 ${
             activeQueue.alerted_at && !activeQueue.is_confirmed 
@@ -252,7 +341,6 @@ export default function ClientDashboard() {
                   </span>
                 </div>
                 
-                {/* Position #2 is the very next person to go */}
                 {position === 2 && (
                   <div className="mt-2">
                     <p className="text-emerald-600 font-bold flex items-center justify-center gap-1.5 animate-in fade-in slide-in-from-bottom-2">
@@ -261,7 +349,6 @@ export default function ClientDashboard() {
                   </div>
                 )}
 
-                {/* ✂️ POSITION 1: Currently in the chair! */}
                 {position === 1 && !activeQueue.alerted_at && (
                   <div className="bg-amber-50 text-amber-600 border border-amber-200 px-4 py-2 rounded-full inline-flex items-center justify-center gap-2 mt-2 font-black animate-in zoom-in-95">
                     <Scissors className="w-4 h-4" /> C'est votre tour !
@@ -275,8 +362,6 @@ export default function ClientDashboard() {
                 </div>
                 <div>
                   <h3 className="font-black text-lg text-slate-900 leading-tight">{activeQueue.barbers?.shop_name}</h3>
-                  
-                  {/* ✨ THE FIX: Made location a clickable link that opens in a new tab */}
                   {activeQueue.barbers?.location && (
                     <a 
                       href={activeQueue.barbers.location} 
@@ -291,7 +376,6 @@ export default function ClientDashboard() {
                 </div>
               </div>
 
-              {/* The On My Way Button */}
               {activeQueue.alerted_at && !activeQueue.is_confirmed ? (
                 <button 
                   onClick={handleConfirmOnMyWay}
