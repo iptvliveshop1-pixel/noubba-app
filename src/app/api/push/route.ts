@@ -4,15 +4,15 @@ import { createClient } from '@supabase/supabase-js';
 
 // 1. Configure Web Push with your keys
 webpush.setVapidDetails(
-  'mailto:contact@noubba.com', // You can change this to your email
+  'mailto:contact@noubba.com',
   process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
   process.env.VAPID_PRIVATE_KEY!
 );
 
-// 2. Connect to Supabase to fetch the customer's push token
+// 🔥 2. CHANGED: Use the Service Role Key to bypass RLS!
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY! 
 );
 
 export async function POST(req: Request) {
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Customer ID is required' }, { status: 400 });
     }
 
-    // 3. Find the customer in the database
+    // 3. Find the customer in the database (Now as Admin)
     const { data: customer, error } = await supabase
       .from('customers')
       .select('push_subscription')
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
       .single();
 
     if (error || !customer?.push_subscription) {
-      console.log('No push subscription found for this customer.');
+      console.log('No push subscription found for this customer.', error);
       return NextResponse.json({ error: 'No push subscription found' }, { status: 404 });
     }
 
