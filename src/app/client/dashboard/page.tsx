@@ -124,16 +124,30 @@ export default function ClientDashboard() {
     setIsLoading(false);
   };
 
+  // Initial Fetch
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
+  // Realtime WebSockets
   useEffect(() => {
     if (!user) return;
-    const interval = setInterval(() => {
-      fetchDashboardData();
-    }, 5000); 
-    return () => clearInterval(interval);
+
+    const channel = supabase
+      .channel('custom-queue-channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'queue' },
+        (payload) => {
+          console.log('Realtime Queue Update Received:', payload);
+          fetchDashboardData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user, soundEnabled]);
 
   const handleLogout = async () => {
@@ -255,7 +269,6 @@ export default function ClientDashboard() {
           <div className="flex-1 relative bg-black flex flex-col items-center justify-center overflow-hidden">
             <Scanner 
               onScan={handleScanSuccess} 
-              formats={['qr_code']}
               components={{
                 audio: false,
                 finder: false 
