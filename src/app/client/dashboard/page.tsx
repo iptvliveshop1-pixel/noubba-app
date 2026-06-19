@@ -3,7 +3,8 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { LogOut, Scissors, MapPin, Timer, CheckCircle2, AlertCircle, X, Navigation, BellRing, Store } from 'lucide-react';
+import { LogOut, Scissors, MapPin, Timer, CheckCircle2, AlertCircle, X, Navigation, Store, QrCode, Camera } from 'lucide-react';
+import { Scanner } from '@yudiel/react-qr-scanner';
 
 // Helper function required to encrypt the VAPID key for Apple/Google
 function urlBase64ToUint8Array(base64String: string) {
@@ -26,6 +27,8 @@ export default function ClientDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isConfirming, setIsConfirming] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
+  
+  const [showScanner, setShowScanner] = useState(false);
   
   const [soundEnabled, setSoundEnabled] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -60,7 +63,7 @@ export default function ClientDashboard() {
     if (queueData) {
       const { data: barberData } = await supabase
         .from('barbers')
-        .select('shop_name, location')
+        .select('shop_name, location, profile_image_url')
         .eq('id', queueData.barber_id)
         .single();
         
@@ -109,7 +112,7 @@ export default function ClientDashboard() {
       if (pastVisits && pastVisits.length > 0) {
         const { data: bData } = await supabase
           .from('barbers')
-          .select('id, shop_name')
+          .select('id, shop_name, profile_image_url')
           .eq('id', pastVisits[0].barber_id)
           .single();
         setRecentBarber(bData);
@@ -138,13 +141,13 @@ export default function ClientDashboard() {
     router.push('/client/login');
   };
 
-  // 🔥 THE NEW SUBSCRIPTION LOGIC
   const subscribeToPush = async () => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
     try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return;
+
       const registration = await navigator.serviceWorker.register('/sw.js');
-      
-      // Wait for the service worker to be ready
       await navigator.serviceWorker.ready;
 
       const subscription = await registration.pushManager.subscribe({
@@ -152,7 +155,6 @@ export default function ClientDashboard() {
         applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!)
       });
 
-      // Save the token to Supabase for this user
       if (user) {
         await supabase
           .from('customers')
@@ -164,25 +166,13 @@ export default function ClientDashboard() {
     }
   };
 
-  const enableAlerts = async () => {
-    // 1. Unlock Audio for the ding sound
-    if (audioRef.current) {
-      audioRef.current.play().catch(() => {});
-      audioRef.current.pause(); 
-      audioRef.current.currentTime = 0;
-    }
-    setSoundEnabled(true);
-
-    // 2. Request Native Push Notifications
-    await subscribeToPush();
-
-    toast.success("Alertes activées !", { style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
-  };
-
   const handleJoinUsualBarber = async () => {
     if (!recentBarber) return;
-    // Request permission exactly when they click to join
-    await subscribeToPush();
+    const toastId = toast.loading("Redirection vers le salon...");
+    
+    await subscribeToPush(); 
+    
+    toast.dismiss(toastId);
     router.push(`/q/${recentBarber.id}`);
   };
 
@@ -224,6 +214,20 @@ export default function ClientDashboard() {
     setIsCanceling(false);
   };
 
+  const handleScanSuccess = async (result: any) => {
+    if (result && result.length > 0) {
+      const url = result[0].rawValue;
+      if (url.includes('/q/')) {
+        setShowScanner(false);
+        const toastId = toast.loading("Salon trouvé ! Ouverture...");
+        await subscribeToPush(); 
+        window.location.href = url;
+      } else {
+        toast.error("Ce QR Code n'est pas valide pour Noubba.");
+      }
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-[100dvh] bg-slate-50 flex items-center justify-center">
@@ -236,6 +240,43 @@ export default function ClientDashboard() {
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-blue-200">
       
       <audio ref={audioRef} src="/ding.mp3" preload="auto" />
+
+      {showScanner && (
+        <div className="fixed inset-0 z-[100] bg-slate-900 flex flex-col animate-in fade-in zoom-in-95 duration-200">
+          <div className="flex justify-between items-center p-6 bg-slate-900 text-white z-10 border-b border-white/10 shadow-lg">
+            <div className="flex items-center gap-3">
+              <Camera className="w-6 h-6 text-blue-400" />
+              <h2 className="font-black text-xl tracking-tight">Scanner un Salon</h2>
+            </div>
+            <button onClick={() => setShowScanner(false)} className="bg-white/10 hover:bg-white/20 transition-colors p-2 rounded-full">
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+          <div className="flex-1 relative bg-black flex flex-col items-center justify-center overflow-hidden">
+            <Scanner 
+              onScan={handleScanSuccess} 
+              formats={['qr_code']}
+              components={{
+                audio: false,
+                finder: false 
+              } as any}
+              styles={{
+                container: { width: '100%', height: '100%' },
+                video: { objectFit: 'cover' }
+              }}
+            />
+            <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
+              <div className="w-64 h-64 border-2 border-blue-500 rounded-3xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
+                <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white rounded-tl-3xl -translate-x-1 -translate-y-1"></div>
+                <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-white rounded-tr-3xl translate-x-1 -translate-y-1"></div>
+                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-white rounded-bl-3xl -translate-x-1 translate-y-1"></div>
+                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-white rounded-br-3xl translate-x-1 translate-y-1"></div>
+              </div>
+              <p className="text-white mt-8 font-bold text-sm bg-black/50 px-4 py-2 rounded-full backdrop-blur-md">Placez le QR Code dans le cadre</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="h-[25vh] w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-900/40 via-slate-900 to-black"></div>
@@ -257,58 +298,57 @@ export default function ClientDashboard() {
 
       <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-8 pb-10 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
         
-        {!soundEnabled && activeQueue && (
-          <div 
-            onClick={enableAlerts}
-            className="bg-blue-600 text-white p-4 rounded-2xl mb-6 shadow-lg shadow-blue-600/20 cursor-pointer flex justify-between items-center transition-transform active:scale-[0.98]"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center shrink-0">
-                <BellRing className="w-5 h-5 animate-pulse" />
-              </div>
-              <div className="leading-tight">
-                <p className="font-bold text-sm">Activer les alertes</p>
-                <p className="text-blue-200 text-xs font-medium mt-0.5">Pour être prévenu quand c'est votre tour</p>
-              </div>
-            </div>
-          </div>
-        )}
-
         {!activeQueue ? (
-          recentBarber ? (
-            <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100 text-center mt-4 relative overflow-hidden group">
-              <div className="absolute -right-8 -top-8 opacity-[0.02] pointer-events-none group-hover:scale-110 transition-transform duration-500">
-                <Store className="w-48 h-48" />
-              </div>
-              
-              <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-100 shadow-inner">
-                <Store className="w-8 h-8 text-amber-500" />
-              </div>
-              <h3 className="text-xl font-black text-slate-900 mb-1 tracking-tight">Votre salon habituel</h3>
-              <p className="text-sm text-slate-500 font-bold mb-8">{recentBarber.shop_name}</p>
+          <>
+            {recentBarber ? (
+              <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100 text-center mt-4 relative overflow-hidden group">
+                <div className="absolute -right-8 -top-8 opacity-[0.02] pointer-events-none group-hover:scale-110 transition-transform duration-500">
+                  <Store className="w-48 h-48" />
+                </div>
+                
+                {recentBarber.profile_image_url ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={recentBarber.profile_image_url} alt="Salon" className="w-24 h-24 rounded-full object-cover border-4 border-amber-50 shadow-lg mx-auto mb-4" />
+                ) : (
+                  <div className="w-20 h-20 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-100 shadow-inner">
+                    <Store className="w-8 h-8 text-amber-500" />
+                  </div>
+                )}
+                
+                <h3 className="text-xl font-black text-slate-900 mb-1 tracking-tight">Votre salon habituel</h3>
+                <p className="text-sm text-slate-500 font-bold mb-8">{recentBarber.shop_name}</p>
 
+                <button 
+                  onClick={handleJoinUsualBarber}
+                  className="w-full h-14 bg-slate-900 active:bg-slate-800 hover:bg-slate-800 text-white font-black rounded-xl transition-all shadow-lg shadow-slate-900/20 text-lg flex items-center justify-center gap-2 mb-5 relative z-10"
+                >
+                  <Scissors className="w-5 h-5 text-amber-400" /> Prendre ma place
+                </button>
+              </div>
+            ) : (
+              <div className="bg-white p-10 rounded-[2rem] shadow-sm border border-slate-100 text-center mt-4 mb-4">
+                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Timer className="w-8 h-8 text-slate-300" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-900 mb-2">Aucune file en cours</h3>
+                <p className="text-sm text-slate-500 font-medium mb-6">Prenez votre place rapidement !</p>
+              </div>
+            )}
+            
+            <div className="mt-4 bg-blue-50 border border-blue-100 rounded-[2rem] p-6 text-center">
+              <div className="w-14 h-14 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+                <QrCode className="w-6 h-6 text-blue-600" />
+              </div>
+              <h3 className="text-lg font-black text-slate-900 mb-1">Nouveau salon ?</h3>
+              <p className="text-sm text-slate-500 font-medium mb-5">Scannez le code du coiffeur pour rejoindre sa file d'attente.</p>
               <button 
-                onClick={handleJoinUsualBarber}
-                className="w-full h-14 bg-slate-900 active:bg-slate-800 hover:bg-slate-800 text-white font-black rounded-xl transition-all shadow-lg shadow-slate-900/20 text-lg flex items-center justify-center gap-2 mb-5 relative z-10"
+                onClick={() => setShowScanner(true)}
+                className="w-full h-14 bg-blue-600 active:bg-blue-700 text-white font-black rounded-xl transition-all shadow-lg shadow-blue-600/30 text-lg flex items-center justify-center gap-2"
               >
-                <Scissors className="w-5 h-5 text-amber-400" /> Prendre ma place
+                <Camera className="w-5 h-5 text-blue-200" /> Scanner un QR Code
               </button>
-
-              <div className="pt-5 border-t border-slate-100">
-                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  Nouveau salon ? Scannez un QR Code.
-                </p>
-              </div>
             </div>
-          ) : (
-            <div className="bg-white p-10 rounded-[2rem] shadow-sm border border-slate-100 text-center mt-4">
-              <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Timer className="w-8 h-8 text-slate-300" />
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">Aucune file en cours</h3>
-              <p className="text-sm text-slate-500 font-medium mb-6">Scannez le QR Code de votre coiffeur préféré pour prendre votre place.</p>
-            </div>
-          )
+          </>
         ) : (
           <div className={`rounded-[2rem] p-1 shadow-lg transition-colors duration-500 ${
             activeQueue.alerted_at && !activeQueue.is_confirmed 
@@ -357,9 +397,15 @@ export default function ClientDashboard() {
               </div>
 
               <div className="flex items-center gap-4 mb-8">
-                <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
-                  <Scissors className="w-6 h-6 text-slate-600" />
-                </div>
+                {activeQueue.barbers?.profile_image_url ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={activeQueue.barbers.profile_image_url} alt="Salon" className="w-14 h-14 rounded-xl object-cover shadow-sm border border-slate-100 shrink-0" />
+                ) : (
+                  <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
+                    <Scissors className="w-6 h-6 text-slate-600" />
+                  </div>
+                )}
+                
                 <div>
                   <h3 className="font-black text-lg text-slate-900 leading-tight">{activeQueue.barbers?.shop_name}</h3>
                   {activeQueue.barbers?.location && (
