@@ -931,7 +931,7 @@ export default function Dashboard() {
                   <Briefcase className="w-4 h-4 text-amber-500" /> Gérer Prestations & Équipe
                 </button>
 
-                <Link href="/barber/analytics" className="w-full h-12 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
+                <Link href="/analytics" className="w-full h-12 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
                   <BarChart3 className="w-4 h-4 text-blue-500" /> Voir les statistiques du jour
                 </Link>
               </div>

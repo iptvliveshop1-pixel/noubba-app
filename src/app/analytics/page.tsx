@@ -126,7 +126,7 @@ export default function AnalyticsDashboard() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black"></div>
         
         <div className="relative z-10 flex items-center gap-4 mb-8">
-          <Link href="/barber/dashboard" className="w-10 h-10 bg-white/10 hover:bg-white/20 transition-colors border border-white/20 rounded-full flex items-center justify-center text-white">
+          <Link href="/dashboard" className="w-10 h-10 bg-white/10 hover:bg-white/20 transition-colors border border-white/20 rounded-full flex items-center justify-center text-white">
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <h1 className="text-xl font-bold text-slate-300 tracking-tight">Retour au tableau de bord</h1>
