@@ -17,16 +17,24 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
+// ✨ NEW: Time formatter for the client countdown
+const formatTime = (seconds: number) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
 export default function ClientDashboard() {
   const [user, setUser] = useState<any>(null);
   const [customerName, setCustomerName] = useState('');
   const [activeQueue, setActiveQueue] = useState<any>(null);
   const [recentBarber, setRecentBarber] = useState<any>(null); 
-  const [loyaltyPoints, setLoyaltyPoints] = useState<number>(0); // ✨ NEW: Loyalty Points State
+  const [loyaltyPoints, setLoyaltyPoints] = useState<number>(0);
   const [position, setPosition] = useState<number>(0);
-  const [estimatedWaitTime, setEstimatedWaitTime] = useState<number>(0);
   
-  // ✨ NEW: Review & Loyalty States
+  // ✨ NEW: Synchronized Client-Side Countdown
+  const [clientTimeRemaining, setClientTimeRemaining] = useState<number>(0);
+
   const [unreviewedTicket, setUnreviewedTicket] = useState<any>(null);
   const [ratingValue, setRatingValue] = useState<number>(0);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
@@ -88,14 +96,12 @@ export default function ClientDashboard() {
       
       const { data: aheadTickets } = await supabase
         .from('queue')
-        .select('total_estimated_time')
+        .select('id')
         .eq('barber_id', queueData.barber_id)
         .eq('status', 'waiting')
         .lt('joined_at', queueData.joined_at);
 
       const currentPos = (aheadTickets?.length || 0) + 1;
-      const calculatedWaitTime = aheadTickets?.reduce((sum, ticket) => sum + (ticket.total_estimated_time || 20), 0) || 0;
-      setEstimatedWaitTime(calculatedWaitTime);
       
       if (prevPosition.current > 0 && currentPos < prevPosition.current) {
         toast.success("La file avance ! C'est bientôt à vous.", { 
@@ -120,10 +126,10 @@ export default function ClientDashboard() {
       // NO ACTIVE QUEUE LOGIC
       setActiveQueue(null);
       setPosition(0);
-      setEstimatedWaitTime(0);
+      setClientTimeRemaining(0);
       hasPlayedAlertSound.current = false;
 
-      // ✨ NEW: Check for unreviewed completed tickets
+      // Check for unreviewed completed tickets
       const { data: unreviewedData } = await supabase
         .from('queue')
         .select('*, barbers(id, shop_name, profile_image_url)')
@@ -156,7 +162,6 @@ export default function ClientDashboard() {
           .single();
         setRecentBarber(bData);
 
-        // Fetch Loyalty Points
         if (bData) {
           const { data: loyData } = await supabase
             .from('shop_loyalty')
@@ -179,6 +184,21 @@ export default function ClientDashboard() {
     fetchDashboardData();
   }, []);
 
+  // ✨ NEW: Synchronized 10-Minute Countdown Loop
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (activeQueue?.alerted_at && !activeQueue.is_confirmed) {
+      interval = setInterval(() => {
+        const elapsed = Math.floor((new Date().getTime() - new Date(activeQueue.alerted_at).getTime()) / 1000);
+        const remaining = Math.max(0, 600 - elapsed);
+        setClientTimeRemaining(remaining);
+      }, 1000);
+    } else {
+      setClientTimeRemaining(0);
+    }
+    return () => clearInterval(interval);
+  }, [activeQueue]);
+
   useEffect(() => {
     if (!user) return;
 
@@ -186,7 +206,7 @@ export default function ClientDashboard() {
       .channel('custom-queue-channel')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'queue' },
+        { event: '*', schema: 'public', table: 'queue', filter: `customer_id=eq.${user.id}` },
         (payload) => {
           fetchDashboardData();
         }
@@ -198,19 +218,16 @@ export default function ClientDashboard() {
     };
   }, [user, soundEnabled]);
 
-  // ✨ NEW: Submit Review and Award Loyalty Points
   const handleSubmitReview = async () => {
     if (!unreviewedTicket || ratingValue === 0) return;
     setIsSubmittingReview(true);
     const toastId = toast.loading("Envoi de votre avis...", { style: { borderRadius: '12px' }});
 
-    // 1. Update ticket with rating and mark as reviewed
     await supabase
       .from('queue')
       .update({ rating: ratingValue, review_left: true })
       .eq('id', unreviewedTicket.id);
 
-    // 2. Manage Loyalty Ledger
     const { data: loyaltyData } = await supabase
       .from('shop_loyalty')
       .select('*')
@@ -240,7 +257,6 @@ export default function ClientDashboard() {
     fetchDashboardData();
   };
 
-  // ✨ NEW: Skip Review
   const handleSkipReview = async () => {
     if (!unreviewedTicket) return;
     await supabase.from('queue').update({ review_left: true }).eq('id', unreviewedTicket.id);
@@ -395,7 +411,6 @@ export default function ClientDashboard() {
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-blue-200">
       <audio ref={audioRef} src="/ding.mp3" preload="auto" />
 
-      {/* ✨ NEW: RATING & LOYALTY MODAL */}
       {unreviewedTicket && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-white rounded-[2rem] w-full max-w-sm p-8 shadow-2xl relative flex flex-col items-center text-center animate-in zoom-in-95 duration-300">
@@ -507,7 +522,6 @@ export default function ClientDashboard() {
                 <h3 className="text-xl font-black text-slate-900 mb-1 tracking-tight">Votre salon habituel</h3>
                 <p className="text-sm text-slate-500 font-bold mb-4">{recentBarber.shop_name}</p>
 
-                {/* ✨ NEW: Loyalty Points Display */}
                 {loyaltyPoints > 0 && (
                   <div className="flex items-center justify-center mb-6">
                     <div className="bg-amber-100 text-amber-600 px-4 py-1.5 rounded-full text-xs font-black flex items-center gap-1.5">
@@ -579,12 +593,6 @@ export default function ClientDashboard() {
                   </span>
                 </div>
                 
-                {estimatedWaitTime > 0 && position > 1 && !activeQueue.alerted_at && (
-                  <div className="flex items-center justify-center gap-2 text-amber-600 bg-amber-50 px-4 py-1.5 rounded-full w-fit mx-auto font-bold text-sm mt-2 animate-in fade-in duration-700">
-                    <Timer className="w-4 h-4" /> Attente estimée : ~{estimatedWaitTime} min
-                  </div>
-                )}
-                
                 {position === 2 && (
                   <div className="mt-3">
                     <p className="text-emerald-600 font-bold flex items-center justify-center gap-1.5 animate-in fade-in slide-in-from-bottom-2">
@@ -612,7 +620,7 @@ export default function ClientDashboard() {
                     ))}
                   </div>
                   <div className="border-t border-slate-200 mt-3 pt-3 flex justify-between items-center">
-                    <span className="font-black text-slate-900">Total estimé</span>
+                    <span className="font-black text-slate-900">Total</span>
                     <span className="font-black text-amber-600 text-lg">
                       {activeQueue.queue_services.reduce((total: number, qs: any) => total + (qs.services?.price_dh || 0), 0)} DH
                     </span>
@@ -646,13 +654,19 @@ export default function ClientDashboard() {
                 </div>
               </div>
 
+              {/* ✨ NEW: Synchronized Countdown UI */}
               {activeQueue.alerted_at && !activeQueue.is_confirmed ? (
                 <button 
                   onClick={handleConfirmOnMyWay}
-                  disabled={isConfirming}
-                  className="w-full h-14 bg-orange-500 active:bg-orange-600 text-white font-black rounded-xl transition-all shadow-lg shadow-orange-500/30 text-lg flex items-center justify-center gap-2 mb-3 relative z-10"
+                  disabled={isConfirming || clientTimeRemaining === 0}
+                  className={`w-full h-14 font-black rounded-xl transition-all shadow-lg text-lg flex items-center justify-center gap-2 mb-3 relative z-10 ${
+                    clientTimeRemaining > 0 
+                      ? 'bg-orange-500 active:bg-orange-600 text-white shadow-orange-500/30' 
+                      : 'bg-red-500 text-white shadow-red-500/30 opacity-80 cursor-not-allowed'
+                  }`}
                 >
-                  <Navigation className="w-5 h-5" /> Je suis en route !
+                  <Timer className="w-5 h-5" /> 
+                  {clientTimeRemaining > 0 ? `Je suis en route ! (${formatTime(clientTimeRemaining)})` : 'Temps écoulé !'}
                 </button>
               ) : activeQueue.is_confirmed ? (
                 <div className="w-full h-14 bg-emerald-50 text-emerald-600 font-black rounded-xl border-2 border-emerald-200 flex items-center justify-center gap-2 mb-3 relative z-10">

@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
-import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Smartphone, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Briefcase, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList } from 'lucide-react';
+import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Smartphone, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Briefcase, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon } from 'lucide-react';
 
 type Customer = {
   id: string;
@@ -15,6 +15,7 @@ type Customer = {
   is_confirmed?: boolean;
   status?: string; 
   frozen_at?: string; 
+  delay_count?: number;
   total_estimated_time?: number | null;
   customers?: { full_name: string; phone_number: string };
   queue_services?: {
@@ -38,7 +39,6 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isApproved, setIsApproved] = useState(false);
   
-  // ✨ NEW: Bottom Navigation State
   const [activeTab, setActiveTab] = useState<'queue' | 'settings'>('queue');
 
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
@@ -61,13 +61,14 @@ export default function Dashboard() {
   const [walkInName, setWalkInName] = useState('');
   const [isAddingWalkIn, setIsAddingWalkIn] = useState(false);
 
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [services, setServices] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]);
   
   const [newServiceName, setNewServiceName] = useState('');
   const [newServiceDuration, setNewServiceDuration] = useState('');
   const [newServicePrice, setNewServicePrice] = useState('');
+  const [newServiceImageUrl, setNewServiceImageUrl] = useState(''); // ✨ NEW: Service Image
+  const [uploadingServiceImage, setUploadingServiceImage] = useState(false);
   const [isAddingService, setIsAddingService] = useState(false);
 
   const [newStaffName, setNewStaffName] = useState('');
@@ -79,21 +80,85 @@ export default function Dashboard() {
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const [timers, setTimers] = useState<Record<string, number>>({});
-  const router = useRouter();
+  
+  // ✨ NEW: Refs to power the background automation algorithms
+  const queueRef = useRef<Customer[]>([]);
+  const staffRef = useRef<any[]>([]);
   const confirmedIds = useRef<Set<string>>(new Set());
+  const router = useRouter();
 
+  // ✨ NEW: The Auto-Skip Penalty Algorithm
+  const handleAutoPenalty = async (customer: Customer) => {
+    const newJoinedAt = new Date(new Date().getTime() + 15 * 60000).toISOString();
+    
+    await supabase.from('queue').update({
+      joined_at: newJoinedAt,
+      alerted_at: null,
+      is_confirmed: false,
+      delay_count: (customer.delay_count || 0) + 1
+    }).eq('id', customer.id);
+  
+    toast.error(`${customer.customer_name} est en retard. Relégué !`, { style: { borderRadius: '12px', background: '#ef4444', color: '#fff' }});
+    if (barberId) fetchQueueOnly(barberId);
+  };
+
+  // ✨ NEW: The internal clock that strikes at exactly 0:00
   useEffect(() => {
     const interval = setInterval(() => {
       setTimers(prev => {
         const next = { ...prev };
         Object.keys(next).forEach(id => {
-          if (next[id] > 0) next[id] -= 1;
+          if (next[id] > 0) {
+            next[id] -= 1;
+            if (next[id] === 0) {
+              const customer = queueRef.current.find(c => c.id === id);
+              if (customer && customer.alerted_at && !customer.is_confirmed) {
+                next[id] = -1; // Lock it so it doesn't loop
+                handleAutoPenalty(customer);
+              }
+            }
+          }
         });
         return next;
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [barberId]);
+
+  // ✨ NEW: The Multi-Chair Sliding Window Automation
+  const autoNotify = async (customer: Customer) => {
+    try {
+      await supabase.from('queue').update({ alerted_at: new Date().toISOString() }).eq('id', customer.id);
+      setTimers(prev => ({ ...prev, [customer.id]: 600 }));
+      
+      if (customer.customer_id) {
+        fetch('/api/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customerId: customer.customer_id,
+            title: "C'est bientôt à vous ! ✂️",
+            body: `Le salon ${shopName} vous attend. Cliquez ici pour confirmer !`
+          })
+        }).catch(e => console.error(e));
+      }
+      toast(`Alerte auto envoyée à ${customer.customer_name}`, { icon: '🤖', style: { borderRadius: '12px', background: '#334155', color: '#fff' } });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const triggerSlidingWindow = async (currentQueue: Customer[], currentStaff: any[]) => {
+    const activeStaffCount = currentStaff.filter(s => s.is_available).length || 1;
+    const windowEnd = activeStaffCount * 2; // Chairs + On Deck
+    const clientsToAnalyze = currentQueue.slice(0, windowEnd);
+
+    for (const client of clientsToAnalyze) {
+      if (!client.alerted_at && !client.is_confirmed && client.whatsapp_number !== 'Sur place') {
+        await autoNotify(client);
+      }
+    }
+  };
 
   const fetchQueueOnly = async (bId: string) => {
     const { data, error } = await supabase
@@ -111,7 +176,6 @@ export default function Dashboard() {
 
     if (!error && data) {
       let shouldPlaySound = false;
-      
       const activeClients = data.filter(c => c.status === 'waiting');
       const frozenClients = data.filter(c => c.status === 'frozen');
 
@@ -135,6 +199,12 @@ export default function Dashboard() {
 
       setQueue(activeClients as Customer[]);
       setFrozenQueue(frozenClients as Customer[]);
+      
+      // Update refs and trigger algorithms
+      queueRef.current = activeClients as Customer[];
+      if (activeClients.length > 0) {
+        triggerSlidingWindow(activeClients as Customer[], staffRef.current);
+      }
     }
   };
 
@@ -143,12 +213,14 @@ export default function Dashboard() {
     if (sData) setServices(sData);
 
     const { data: stData } = await supabase.from('staff').select('*').eq('barber_id', bId).order('created_at', { ascending: true });
-    if (stData) setStaff(stData);
+    if (stData) {
+      setStaff(stData);
+      staffRef.current = stData;
+    }
   };
 
   useEffect(() => {
     setOrigin(window.location.origin);
-
     const checkAuthAndFetchData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -157,7 +229,6 @@ export default function Dashboard() {
       }
       
       setUserId(session.user.id);
-
       const { data: barber } = await supabase.from('barbers').select('*').eq('user_id', session.user.id).single();
 
       if (!barber) {
@@ -180,11 +251,10 @@ export default function Dashboard() {
       setLocation(barber.location || '');
       setProfileImage(barber.profile_image_url || '');
 
-      await fetchQueueOnly(barber.id);
       await fetchSettingsData(barber.id); 
+      await fetchQueueOnly(barber.id);
       setIsLoading(false);
     };
-
     checkAuthAndFetchData();
   }, []);
 
@@ -195,6 +265,32 @@ export default function Dashboard() {
     }, 5000);
     return () => clearInterval(interval);
   }, [barberId]);
+
+  // ✨ NEW: Service Image Upload Logic
+  const handleServiceImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      if (!e.target.files || e.target.files.length === 0 || !barberId) return;
+      setUploadingServiceImage(true);
+      const toastId = toast.loading("Téléchargement de l'image...", { style: { borderRadius: '12px' } });
+      
+      const file = e.target.files[0];
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${barberId}-service-${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage.from('service_images').upload(fileName, file);
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from('service_images').getPublicUrl(fileName);
+      setNewServiceImageUrl(publicUrl);
+
+      toast.success("Image ajoutée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
+    } catch (error) {
+      console.error(error);
+      toast.error("Erreur de téléchargement.");
+    } finally {
+      setUploadingServiceImage(false);
+    }
+  };
 
   const handleAddService = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -207,7 +303,8 @@ export default function Dashboard() {
       barber_id: barberId,
       service_name: newServiceName,
       duration_minutes: parseInt(newServiceDuration),
-      price_dh: parseInt(newServicePrice)
+      price_dh: parseInt(newServicePrice),
+      image_url: newServiceImageUrl
     }]).select();
 
     if (!error && data) {
@@ -215,6 +312,7 @@ export default function Dashboard() {
       setNewServiceName('');
       setNewServiceDuration('');
       setNewServicePrice('');
+      setNewServiceImageUrl('');
       toast.success("Prestation ajoutée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
     } else {
       toast.error("Erreur d'ajout.", { id: toastId });
@@ -248,6 +346,7 @@ export default function Dashboard() {
 
     if (!error && data) {
       setStaff(prev => [...prev, data[0]]);
+      staffRef.current = [...staffRef.current, data[0]];
       setNewStaffName('');
       toast.success("Membre ajouté !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
     } else {
@@ -259,7 +358,10 @@ export default function Dashboard() {
   const handleToggleStaffAvailability = async (id: string, currentStatus: boolean) => {
     const { error } = await supabase.from('staff').update({ is_available: !currentStatus }).eq('id', id);
     if (!error) {
-      setStaff(prev => prev.map(s => s.id === id ? { ...s, is_available: !currentStatus } : s));
+      const updated = staff.map(s => s.id === id ? { ...s, is_available: !currentStatus } : s);
+      setStaff(updated);
+      staffRef.current = updated;
+      if (barberId) fetchQueueOnly(barberId); // Retrigger sliding window
     }
   };
 
@@ -269,7 +371,9 @@ export default function Dashboard() {
 
     const { error } = await supabase.from('staff').delete().eq('id', id);
     if (!error) {
-      setStaff(prev => prev.filter(s => s.id !== id));
+      const updated = staff.filter(s => s.id !== id);
+      setStaff(updated);
+      staffRef.current = updated;
       toast.success("Membre supprimé !", { style: { borderRadius: '12px', background: '#333', color: '#fff' }});
     }
   };
@@ -306,24 +410,18 @@ export default function Dashboard() {
       const fileExt = file.name.split('.').pop();
       const fileName = `${barberId}-${Date.now()}.${fileExt}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('barber_profiles')
-        .upload(fileName, file);
-
+      const { error: uploadError } = await supabase.storage.from('barber_profiles').upload(fileName, file);
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('barber_profiles')
-        .getPublicUrl(fileName);
+      const { data: { publicUrl } } = supabase.storage.from('barber_profiles').getPublicUrl(fileName);
 
       setProfileImage(publicUrl);
-      
       await supabase.from('barbers').update({ profile_image_url: publicUrl }).eq('id', barberId);
 
       toast.success("Photo ajoutée avec succès !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
     } catch (error) {
       console.error(error);
-      toast.error("Erreur lors du téléchargement.");
+      toast.error("Erreur de téléchargement.");
     } finally {
       setUploadingImage(false);
     }
@@ -348,7 +446,6 @@ export default function Dashboard() {
   const toggleShopStatus = async () => {
     if (!barberId) return;
     setIsToggling(true);
-    
     const newStatus = !isOpen;
     const { error } = await supabase.from('barbers').update({ is_open: newStatus }).eq('id', barberId);
 
@@ -420,15 +517,10 @@ export default function Dashboard() {
 
   const handleNotify = async (customer: Customer) => {
     setIsSendingAuth(customer.id);
-    const toastId = toast.loading("Alerte en cours...", { style: { borderRadius: '12px' }}); 
-    
+    const toastId = toast.loading("Alerte manuelle en cours...", { style: { borderRadius: '12px' }}); 
     try {
       const sendName = customer.customers?.full_name || customer.customer_name;
-
-      const { error } = await supabase.from('queue').update({ 
-        alerted_at: new Date().toISOString()
-      }).eq('id', customer.id);
-
+      const { error } = await supabase.from('queue').update({ alerted_at: new Date().toISOString() }).eq('id', customer.id);
       if (error) throw error;
 
       setTimers(prev => ({ ...prev, [customer.id]: 600 })); 
@@ -445,9 +537,8 @@ export default function Dashboard() {
         }).catch(err => console.error("Push API failed:", err));
       }
 
-      toast.success(`Alerte envoyée sur l'app à ${sendName.split(' ')[0]} !`, { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
+      toast.success(`Alerte envoyée à ${sendName.split(' ')[0]} !`, { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
       if (barberId) fetchQueueOnly(barberId); 
-      
     } catch (error) {
       toast.error("Erreur réseau.", { id: toastId });
     } finally {
@@ -610,7 +701,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-amber-200">
       
-      {/* HEADER SECTION (Shrunk slightly for more content space) */}
+      {/* HEADER SECTION */}
       <div className="min-h-[25vh] pt-12 pb-8 w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black"></div>
         
@@ -648,7 +739,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* MAIN CONTENT AREA */}
       <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-6 pb-28 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
 
         {/* TAB 1: QUEUE */}
@@ -661,7 +751,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* ✨ FIXED: Walk-in button moved to the top of the queue for easy access */}
             <button 
               onClick={() => setShowWalkInModal(true)}
               className="w-full h-12 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-xl flex items-center justify-center gap-2 mb-6 shadow-md transition-transform active:scale-[0.98]"
@@ -692,7 +781,6 @@ export default function Dashboard() {
                   const displayPhone = customer.customers?.phone_number || customer.whatsapp_number;
                   const timeRemaining = timers[customer.id] || 0;
 
-                  // CARD #1: IN CHAIR (Keep it slightly larger)
                   if (index === 0) {
                     return (
                       <div key={customer.id} className="p-5 rounded-3xl bg-slate-900 text-white shadow-lg border border-slate-800 relative overflow-hidden transition-all">
@@ -741,7 +829,6 @@ export default function Dashboard() {
                     );
                   }
 
-                  // CARD #2+: WAITING (✨ FIXED: Much more compact UI)
                   return (
                     <div 
                       key={customer.id} 
@@ -781,14 +868,8 @@ export default function Dashboard() {
                               )}
                             </div>
 
-                            {/* COMPACT SERVICE TAGS */}
                             {(customer.queue_services?.length ?? 0) > 0 && (
                               <div className="flex flex-wrap items-center gap-1 mt-2">
-                                {customer.total_estimated_time && (
-                                  <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider flex items-center gap-0.5">
-                                    <Timer className="w-2.5 h-2.5" /> {customer.total_estimated_time}m
-                                  </span>
-                                )}
                                 {customer.queue_services?.map((qs, i) => qs.services && (
                                   <span key={i} className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider">
                                     {qs.services.service_name}
@@ -796,18 +877,16 @@ export default function Dashboard() {
                                 ))}
                               </div>
                             )}
-                            
                           </div>
                         </div>
                       </div>
 
-                      {/* COMPACT ACTION BUTTONS ROW */}
                       <div className="grid grid-cols-2 gap-2 mt-1">
                         {displayPhone !== 'Sur place' && !isConfirmed && (
                           <div className="col-span-2">
                             {isAlerted ? (
                               <button disabled className={`w-full h-10 font-black rounded-xl text-xs flex items-center justify-center gap-2 ${timeRemaining > 0 ? 'bg-orange-500 text-white' : 'bg-red-500 text-white'}`}>
-                                <Timer className="w-4 h-4" /> {timeRemaining > 0 ? formatTime(timeRemaining) : "Temps écoulé"}
+                                <Timer className="w-4 h-4" /> {timeRemaining > 0 ? formatTime(timeRemaining) : "Relégation auto..."}
                               </button>
                             ) : (
                               <button 
@@ -838,7 +917,6 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* FROZEN QUEUE */}
             {frozenQueue.length > 0 && (
               <div className="mt-6 animate-in fade-in slide-in-from-bottom-4">
                 <div className="flex items-center gap-2 mb-3 px-2">
@@ -867,16 +945,21 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* TAB 2: SETTINGS (Moved exactly as it was, just into a new tab) */}
+        {/* ✨ NEW: TAB 2 - MODULAR SETTINGS UI */}
         {activeTab === 'settings' && (
           <div className="animate-in fade-in slide-in-from-right-4 duration-300">
             <h2 className="text-2xl font-black text-slate-900 mb-6 tracking-tight flex items-center gap-2 px-2">
-              <Settings className="w-6 h-6 text-slate-400" /> Outils du Salon
+              <Settings className="w-6 h-6 text-slate-400" /> Paramètres
             </h2>
 
+            {/* CARD 1: IDENTITÉ DU SALON */}
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Store className="w-5 h-5 text-blue-500" />
+                <h4 className="text-lg font-black text-slate-900">Identité du Salon</h4>
+              </div>
               <form onSubmit={handleUpdateProfile} className="space-y-4">
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all relative overflow-hidden flex items-center gap-4">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 relative overflow-hidden flex items-center gap-4">
                   <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploadingImage} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                   <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm shrink-0">
                     {profileImage ? (
@@ -892,22 +975,123 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1">
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Lien Google Maps</label>
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
-                    <input type="url" value={location} onChange={(e)=>setLocation(e.target.value)} placeholder="http://maps.google.com/..." className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-900 placeholder-slate-400 focus:ring-0 outline-none" />
+                    <input type="url" value={location} onChange={(e)=>setLocation(e.target.value)} placeholder="http://googleusercontent.com..." className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-900 focus:ring-0 outline-none" />
                   </div>
                 </div>
 
-                <button type="submit" disabled={isSavingProfile} className="w-full h-12 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-70 mt-2">
+                <button type="submit" disabled={isSavingProfile} className="w-full h-12 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-70">
                   <Save className="w-4 h-4 text-amber-400" /> Enregistrer les infos
                 </button>
               </form>
             </div>
 
+            {/* CARD 2: CARTE DES PRESTATIONS */}
+            <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Scissors className="w-5 h-5 text-amber-500" />
+                <h4 className="text-lg font-black text-slate-900">Carte des Prestations</h4>
+              </div>
+              
+              <form onSubmit={handleAddService} className="grid grid-cols-2 gap-3 mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                <div className="col-span-2 flex gap-3">
+                  {/* ✨ NEW: Image Upload for Services */}
+                  <div className="w-12 h-12 bg-white rounded-xl border border-slate-200 flex items-center justify-center relative overflow-hidden shrink-0 shadow-sm">
+                    <input type="file" accept="image/*" onChange={handleServiceImageUpload} disabled={uploadingServiceImage} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+                    {newServiceImageUrl ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={newServiceImageUrl} className="w-full h-full object-cover" alt="Prestation" />
+                    ) : (
+                      <ImageIcon className="w-5 h-5 text-slate-400" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nom du service</label>
+                    <input type="text" required value={newServiceName} onChange={(e)=>setNewServiceName(e.target.value)} placeholder="Coupe Standard" className="w-full bg-white border border-slate-200 rounded-lg p-2 text-sm font-bold text-slate-900 outline-none" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Durée (min)</label>
+                  <input type="number" required min="1" value={newServiceDuration} onChange={(e)=>setNewServiceDuration(e.target.value)} placeholder="30" className="w-full bg-white border border-slate-200 rounded-lg p-2 text-sm font-bold text-slate-900 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Prix (DH)</label>
+                  <input type="number" required min="0" value={newServicePrice} onChange={(e)=>setNewServicePrice(e.target.value)} placeholder="50" className="w-full bg-white border border-slate-200 rounded-lg p-2 text-sm font-bold text-slate-900 outline-none" />
+                </div>
+                <button type="submit" disabled={isAddingService || uploadingServiceImage} className="col-span-2 h-10 bg-slate-900 text-white font-bold rounded-lg mt-1 flex items-center justify-center gap-2 disabled:opacity-50">
+                  <Plus className="w-4 h-4 text-amber-400" /> Ajouter la prestation
+                </button>
+              </form>
+
+              <div className="space-y-2">
+                {services.map(service => (
+                  <div key={service.id} className="bg-slate-50 border border-slate-100 p-3 rounded-2xl flex items-center justify-between shadow-sm">
+                    <div className="flex items-center gap-3">
+                      {service.image_url ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={service.image_url} className="w-10 h-10 rounded-lg object-cover shrink-0 border border-slate-200" alt="" />
+                      ) : (
+                        <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0 border border-slate-200">
+                          <Scissors className="w-4 h-4 text-slate-300" />
+                        </div>
+                      )}
+                      <div>
+                        <p className="font-bold text-slate-900 text-sm leading-tight">{service.service_name}</p>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{service.duration_minutes} min • {service.price_dh} DH</p>
+                      </div>
+                    </div>
+                    <button onClick={() => handleDeleteService(service.id)} className="w-8 h-8 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg flex items-center justify-center transition-colors">
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* CARD 3: L'ÉQUIPE */}
+            <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
+              <div className="flex items-center gap-2 mb-4">
+                <User className="w-5 h-5 text-emerald-500" />
+                <h4 className="text-lg font-black text-slate-900">L'Équipe</h4>
+              </div>
+              
+              <form onSubmit={handleAddStaff} className="flex gap-3 mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                <div className="flex-1">
+                  <input type="text" required value={newStaffName} onChange={(e)=>setNewStaffName(e.target.value)} placeholder="Prénom du coiffeur" className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-sm font-bold text-slate-900 outline-none" />
+                </div>
+                <button type="submit" disabled={isAddingStaff} className="h-10 px-4 bg-slate-900 text-white font-bold rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 shrink-0">
+                  <Plus className="w-4 h-4 text-emerald-400" />
+                </button>
+              </form>
+
+              <div className="space-y-2">
+                {staff.map(member => (
+                  <div key={member.id} className="bg-slate-50 border border-slate-100 p-3 rounded-2xl flex items-center justify-between shadow-sm">
+                    <div>
+                      <p className="font-bold text-slate-900 text-sm">{member.name}</p>
+                      <p className={`text-[10px] font-black uppercase tracking-wider ${member.is_available ? 'text-emerald-500' : 'text-slate-400'}`}>
+                        {member.is_available ? 'Disponible' : 'Absent'}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleToggleStaffAvailability(member.id, member.is_available)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${member.is_available ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
+                        {member.is_available ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                      </button>
+                      <button onClick={() => handleDeleteStaff(member.id)} className="w-8 h-8 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg flex items-center justify-center transition-colors">
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* CARD 4: MARKETING & DATA */}
             {!isLoading && shareLink && (
-              <div className="bg-slate-900 p-6 rounded-3xl shadow-xl relative overflow-hidden group">
+              <div className="bg-slate-900 p-6 rounded-3xl shadow-xl relative overflow-hidden group mb-6">
                 <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
                 
                 <div className="flex items-center gap-5 relative z-10 mb-6">
@@ -916,8 +1100,8 @@ export default function Dashboard() {
                     <img src={qrCodeUrl} alt="QR Code" className="w-20 h-20 rounded-xl" crossOrigin="anonymous" />
                   </div>
                   <div>
-                    <h3 className="text-white font-black text-lg">Affiche QR Code</h3>
-                    <p className="text-slate-400 text-xs font-medium mt-0.5">Pour vos clients au salon</p>
+                    <h3 className="text-white font-black text-lg leading-tight">Marketing & Data</h3>
+                    <p className="text-amber-400 text-[10px] font-bold uppercase tracking-wider mt-1">Affiche QR & Stats</p>
                   </div>
                 </div>
 
@@ -929,24 +1113,18 @@ export default function Dashboard() {
                     {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-amber-400" />}
                     {copied ? 'Lien Copié !' : 'Copier le lien direct'}
                   </button>
-                  
-                  <button 
-                    onClick={() => setShowSettingsModal(true)} 
-                    className="w-full h-12 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm mt-3"
-                  >
-                    <Briefcase className="w-4 h-4 text-amber-500" /> Gérer Prestations & Équipe
-                  </button>
 
-                  <Link href="/analytics" className="w-full h-12 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
+                  <Link href="/analytics" className="w-full h-12 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm mt-3">
                     <BarChart3 className="w-4 h-4 text-blue-500" /> Voir les statistiques du jour
                   </Link>
                 </div>
               </div>
             )}
+            
           </div>
         )}
 
-        {/* WALK IN MODAL (Unchanged) */}
+        {/* WALK IN MODAL */}
         {showWalkInModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 sm:p-8 shadow-2xl relative animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
@@ -972,111 +1150,9 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* SETTINGS MANAGEMENT MODAL (Unchanged) */}
-        {showSettingsModal && (
-          <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
-            <div className="bg-slate-50 rounded-t-[2.5rem] sm:rounded-[2.5rem] w-full max-w-lg h-[90vh] sm:h-[85vh] shadow-2xl relative flex flex-col animate-in slide-in-from-bottom-8 sm:zoom-in-95 duration-300 overflow-hidden">
-              <div className="p-6 bg-white border-b border-slate-100 flex justify-between items-center shrink-0 z-10 shadow-sm">
-                <div>
-                  <h3 className="text-2xl font-black text-slate-900 tracking-tight">Gestion du Salon</h3>
-                  <p className="text-slate-500 font-medium text-sm">Modifiez vos services et votre équipe</p>
-                </div>
-                <button onClick={() => setShowSettingsModal(false)} className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full flex items-center justify-center transition-colors">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-6 space-y-8">
-                <section>
-                  <div className="flex items-center gap-2 mb-4">
-                    <Scissors className="w-5 h-5 text-amber-500" />
-                    <h4 className="text-lg font-black text-slate-900">Vos Prestations</h4>
-                  </div>
-                  
-                  <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-4 shadow-sm">
-                    <form onSubmit={handleAddService} className="grid grid-cols-2 gap-3">
-                      <div className="col-span-2">
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Nom du service</label>
-                        <input type="text" required value={newServiceName} onChange={(e)=>setNewServiceName(e.target.value)} placeholder="Ex: Coupe Standard" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-900 transition-colors" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Durée (min)</label>
-                        <input type="number" required min="1" value={newServiceDuration} onChange={(e)=>setNewServiceDuration(e.target.value)} placeholder="30" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-900 transition-colors" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Prix (DH)</label>
-                        <input type="number" required min="0" value={newServicePrice} onChange={(e)=>setNewServicePrice(e.target.value)} placeholder="50" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-900 transition-colors" />
-                      </div>
-                      <button type="submit" disabled={isAddingService} className="col-span-2 h-12 bg-slate-900 text-white font-bold rounded-xl mt-1 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all">
-                        <Plus className="w-4 h-4 text-amber-400" /> {isAddingService ? 'Ajout...' : 'Ajouter la prestation'}
-                      </button>
-                    </form>
-                  </div>
-
-                  <div className="space-y-2">
-                    {services.map(service => (
-                      <div key={service.id} className="bg-white border border-slate-100 p-4 rounded-2xl flex items-center justify-between shadow-sm">
-                        <div>
-                          <p className="font-bold text-slate-900">{service.service_name}</p>
-                          <p className="text-xs font-bold text-slate-400">{service.duration_minutes} min • {service.price_dh} DH</p>
-                        </div>
-                        <button onClick={() => handleDeleteService(service.id)} className="w-10 h-10 bg-red-50 text-red-500 hover:bg-red-100 rounded-xl flex items-center justify-center transition-colors">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                <hr className="border-slate-200/60" />
-
-                <section>
-                  <div className="flex items-center gap-2 mb-4">
-                    <User className="w-5 h-5 text-blue-500" />
-                    <h4 className="text-lg font-black text-slate-900">Votre Équipe</h4>
-                  </div>
-                  
-                  <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-4 shadow-sm">
-                    <form onSubmit={handleAddStaff} className="flex gap-3">
-                      <div className="flex-1">
-                        <input type="text" required value={newStaffName} onChange={(e)=>setNewStaffName(e.target.value)} placeholder="Prénom du coiffeur" className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:border-slate-900 transition-colors" />
-                      </div>
-                      <button type="submit" disabled={isAddingStaff} className="h-12 px-5 bg-slate-900 text-white font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all shrink-0">
-                        <Plus className="w-4 h-4 text-amber-400" />
-                      </button>
-                    </form>
-                  </div>
-
-                  <div className="space-y-2">
-                    {staff.map(member => (
-                      <div key={member.id} className="bg-white border border-slate-100 p-4 rounded-2xl flex items-center justify-between shadow-sm">
-                        <div>
-                          <p className="font-bold text-slate-900">{member.name}</p>
-                          <p className={`text-xs font-bold ${member.is_available ? 'text-emerald-500' : 'text-slate-400'}`}>
-                            {member.is_available ? 'Disponible' : 'Absent'}
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => handleToggleStaffAvailability(member.id, member.is_available)} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${member.is_available ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                            {member.is_available ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
-                          </button>
-                          <button onClick={() => handleDeleteStaff(member.id)} className="w-10 h-10 bg-red-50 text-red-500 hover:bg-red-100 rounded-xl flex items-center justify-center transition-colors">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-              </div>
-            </div>
-          </div>
-        )}
-
       </div>
 
-      {/* ✨ NEW: BOTTOM NAVIGATION BAR */}
+      {/* BOTTOM NAVIGATION BAR */}
       <div className="fixed bottom-0 left-0 right-0 h-20 bg-white border-t border-slate-200 flex items-center justify-around z-40 px-6 pb-2">
         <button 
           onClick={() => setActiveTab('queue')} 
