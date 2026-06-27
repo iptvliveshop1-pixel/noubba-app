@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
-import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Smartphone, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Briefcase, Plus, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Smartphone, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Briefcase, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList } from 'lucide-react';
 
 type Customer = {
   id: string;
@@ -38,6 +38,9 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isApproved, setIsApproved] = useState(false);
   
+  // ✨ NEW: Bottom Navigation State
+  const [activeTab, setActiveTab] = useState<'queue' | 'settings'>('queue');
+
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [onboardShopName, setOnboardShopName] = useState('');
   const [onboardOwnerName, setOnboardOwnerName] = useState('');
@@ -58,7 +61,6 @@ export default function Dashboard() {
   const [walkInName, setWalkInName] = useState('');
   const [isAddingWalkIn, setIsAddingWalkIn] = useState(false);
 
-  // ✨ NEW: Settings Modal State
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [services, setServices] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]);
@@ -136,7 +138,6 @@ export default function Dashboard() {
     }
   };
 
-  // ✨ NEW: Fetch Services and Staff
   const fetchSettingsData = async (bId: string) => {
     const { data: sData } = await supabase.from('services').select('*').eq('barber_id', bId).order('created_at', { ascending: true });
     if (sData) setServices(sData);
@@ -180,7 +181,7 @@ export default function Dashboard() {
       setProfileImage(barber.profile_image_url || '');
 
       await fetchQueueOnly(barber.id);
-      await fetchSettingsData(barber.id); // Fetch for settings modal
+      await fetchSettingsData(barber.id); 
       setIsLoading(false);
     };
 
@@ -195,7 +196,6 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [barberId]);
 
-  // ✨ NEW: Service Management Handlers
   const handleAddService = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newServiceName || !newServiceDuration || !newServicePrice || !barberId) return;
@@ -233,7 +233,6 @@ export default function Dashboard() {
     }
   };
 
-  // ✨ NEW: Staff Management Handlers
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStaffName || !barberId) return;
@@ -611,7 +610,8 @@ export default function Dashboard() {
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-amber-200">
       
-      <div className="min-h-[32vh] pt-12 pb-8 w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
+      {/* HEADER SECTION (Shrunk slightly for more content space) */}
+      <div className="min-h-[25vh] pt-12 pb-8 w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black"></div>
         
         <div className="absolute top-4 sm:top-6 w-full left-0 px-4 flex justify-between items-center z-20">
@@ -630,316 +630,323 @@ export default function Dashboard() {
           </button>
         </div>
 
-        <div className="relative z-10 mt-12 flex items-center gap-4">
+        <div className="relative z-10 mt-8 flex items-center gap-4">
           {profileImage ? (
             /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={profileImage} alt="Profile" className="w-16 h-16 shrink-0 rounded-full object-cover border-2 border-white/20 shadow-lg" />
+            <img src={profileImage} alt="Profile" className="w-14 h-14 shrink-0 rounded-full object-cover border-2 border-white/20 shadow-lg" />
           ) : (
-            <div className="w-16 h-16 shrink-0 bg-slate-800 rounded-full flex items-center justify-center border-2 border-white/20 shadow-lg">
-              <span className="text-2xl font-black text-amber-500">{shopName ? shopName.charAt(0).toUpperCase() : 'S'}</span>
+            <div className="w-14 h-14 shrink-0 bg-slate-800 rounded-full flex items-center justify-center border-2 border-white/20 shadow-lg">
+              <span className="text-xl font-black text-amber-500">{shopName ? shopName.charAt(0).toUpperCase() : 'S'}</span>
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-none mb-1 truncate">
+            <h1 className="text-2xl font-black text-white tracking-tight leading-none mb-1 truncate">
               Bonjour, {ownerName ? ownerName.split(' ')[0] : ''}
             </h1>
-            <p className="text-slate-400 font-medium text-sm truncate">{shopName}</p>
+            <p className="text-slate-400 font-medium text-xs truncate">{shopName}</p>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-8 pb-32 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-6 pb-28 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
 
-        <div className="flex justify-between items-end mb-6 px-2">
-          <div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight">File d'attente</h2>
-            <p className="text-sm font-bold text-amber-600 mt-1">{queue.length} personne(s) en attente</p>
-          </div>
-        </div>
-
-        {isLoading ? (
-          <div className="space-y-4">
-            {[1, 2].map((i) => (
-              <div key={i} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm animate-pulse h-32 w-full"></div>
-            ))}
-          </div>
-        ) : queue.length === 0 ? (
-          <div className="bg-white p-12 rounded-[2rem] shadow-sm border border-slate-100 text-center">
-            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Coffee className="w-8 h-8 text-slate-300" />
+        {/* TAB 1: QUEUE */}
+        {activeTab === 'queue' && (
+          <div className="animate-in fade-in duration-300">
+            <div className="flex justify-between items-end mb-4 px-2">
+              <div>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">File d'attente</h2>
+                <p className="text-sm font-bold text-amber-600 mt-0.5">{queue.length} personne(s) en attente</p>
+              </div>
             </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-1">La file est vide</h3>
-            <p className="text-sm text-slate-500 font-medium">En attente de clients...</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {queue.map((customer, index) => {
-              const isAlerted = !!customer.alerted_at;
-              const isConfirmed = customer.is_confirmed;
-              const displayName = customer.customers?.full_name || customer.customer_name;
-              const displayPhone = customer.customers?.phone_number || customer.whatsapp_number;
-              const timeRemaining = timers[customer.id] || 0;
 
-              if (index === 0) {
-                return (
-                  <div key={customer.id} className="p-6 rounded-[2rem] bg-slate-900 text-white shadow-xl shadow-slate-900/10 border border-slate-800 relative overflow-hidden transition-all duration-500">
-                    <div className="absolute -right-8 -bottom-8 opacity-[0.05] pointer-events-none">
-                      <Scissors className="w-48 h-48" />
-                    </div>
-                    
-                    <div className="flex justify-between items-start relative z-10">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/20">
-                          <Scissors className="w-6 h-6 text-slate-900 animate-pulse" />
+            {/* ✨ FIXED: Walk-in button moved to the top of the queue for easy access */}
+            <button 
+              onClick={() => setShowWalkInModal(true)}
+              className="w-full h-12 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-xl flex items-center justify-center gap-2 mb-6 shadow-md transition-transform active:scale-[0.98]"
+            >
+              <UserPlus className="w-4 h-4 text-amber-400" /> Ajouter Sur Place
+            </button>
+
+            {isLoading ? (
+              <div className="space-y-4">
+                {[1, 2].map((i) => (
+                  <div key={i} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm animate-pulse h-32 w-full"></div>
+                ))}
+              </div>
+            ) : queue.length === 0 ? (
+              <div className="bg-white p-10 rounded-[2rem] shadow-sm border border-slate-100 text-center">
+                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Coffee className="w-6 h-6 text-slate-300" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 mb-1">La file est vide</h3>
+                <p className="text-sm text-slate-500 font-medium">En attente de clients...</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {queue.map((customer, index) => {
+                  const isAlerted = !!customer.alerted_at;
+                  const isConfirmed = customer.is_confirmed;
+                  const displayName = customer.customers?.full_name || customer.customer_name;
+                  const displayPhone = customer.customers?.phone_number || customer.whatsapp_number;
+                  const timeRemaining = timers[customer.id] || 0;
+
+                  // CARD #1: IN CHAIR (Keep it slightly larger)
+                  if (index === 0) {
+                    return (
+                      <div key={customer.id} className="p-5 rounded-3xl bg-slate-900 text-white shadow-lg border border-slate-800 relative overflow-hidden transition-all">
+                        <div className="absolute -right-8 -bottom-8 opacity-[0.05] pointer-events-none">
+                          <Scissors className="w-40 h-40" />
                         </div>
-                        <div>
-                          <span className="text-amber-400 font-bold text-xs uppercase tracking-widest mb-1 block">Sur le fauteuil</span>
-                          <h3 className="text-xl font-black text-white capitalize leading-tight">{displayName}</h3>
-                          <div className="flex items-center gap-1.5 mt-1">
-                            {displayPhone === 'Sur place' ? (
-                              <span className="bg-white/10 text-slate-300 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider">Sur Place</span>
-                            ) : (
-                              <>
-                                <Smartphone className="w-3 h-3 text-slate-400" />
-                                <span className="text-slate-400 font-mono text-xs font-medium">{displayPhone}</span>
-                              </>
-                            )}
-                          </div>
-                          
-                          {customer.queue_services && customer.queue_services.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                              {customer.queue_services.map((qs, i) => qs.services && (
-                                <span key={i} className="bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">
-                                  {qs.services.service_name}
-                                </span>
-                              ))}
+                        
+                        <div className="flex justify-between items-start relative z-10">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/20">
+                              <Scissors className="w-5 h-5 text-slate-900 animate-pulse" />
                             </div>
-                          )}
-
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-3 w-full mt-6 relative z-10">
-                      <button onClick={() => handleComplete(customer.id)} className="flex-1 h-14 bg-emerald-500 hover:bg-emerald-400 text-white font-black rounded-xl transition-all active:scale-[0.98] text-lg flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20">
-                        <Check className="w-5 h-5" /> Terminer la coupe
-                      </button>
-                      <button onClick={() => handleFreeze(customer.id)} className="w-14 h-14 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center shrink-0 border border-white/10" title="Mettre en pause (Absent)">
-                        <UserX className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              }
-
-              return (
-                <div 
-                  key={customer.id} 
-                  className={`p-5 rounded-[2rem] shadow-sm flex flex-col gap-4 transition-all duration-500 ${
-                    isConfirmed 
-                      ? 'bg-emerald-50/40 border-2 border-emerald-400 shadow-emerald-500/10' 
-                      : isAlerted 
-                        ? 'bg-orange-50/40 border-2 border-orange-300 shadow-orange-500/10' 
-                        : 'bg-white border border-slate-100'
-                  }`}
-                >
-                  <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
-                        isConfirmed ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : isAlerted ? 'bg-orange-100 border-orange-200 text-orange-700' : 'bg-slate-100 border-slate-200 text-slate-600'
-                      }`}>
-                        <span className="font-black text-lg">#{index + 1}</span>
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-black text-slate-900 capitalize leading-tight">{displayName}</h3>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          {displayPhone === 'Sur place' ? (
-                            <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider">Sur Place</span>
-                          ) : (
-                            <>
-                              <Smartphone className="w-3 h-3 text-slate-400" />
-                              <span className="text-slate-500 font-mono text-xs font-medium">{displayPhone}</span>
-                            </>
-                          )}
-                          
-                          {isConfirmed && (
-                            <span className="ml-1 flex items-center text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full animate-in fade-in zoom-in duration-300">
-                              <CheckCircle2 className="w-3 h-3 mr-0.5" /> En route
-                            </span>
-                          )}
-                          {isAlerted && !isConfirmed && (
-                            <span className="ml-1 flex items-center text-[10px] font-bold text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full animate-pulse">
-                              <Timer className="w-3 h-3 mr-0.5" /> En attente
-                            </span>
-                          )}
+                            <div>
+                              <span className="text-amber-400 font-bold text-[10px] uppercase tracking-widest block">Sur le fauteuil</span>
+                              <h3 className="text-lg font-black text-white capitalize leading-tight">{displayName}</h3>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                {displayPhone === 'Sur place' ? (
+                                  <span className="bg-white/10 text-slate-300 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider">Sur Place</span>
+                                ) : (
+                                  <span className="text-slate-400 font-mono text-xs">{displayPhone}</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
                         </div>
 
-                        {(customer.queue_services?.length ?? 0) > 0 && (
-                          <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                            {customer.total_estimated_time && (
-                              <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
-                                <Timer className="w-3 h-3" /> {customer.total_estimated_time} min
-                              </span>
-                            )}
-                            {customer.queue_services?.map((qs, i) => qs.services && (
-                              <span key={i} className="bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">
+                        {customer.queue_services && customer.queue_services.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-3 relative z-10">
+                            {customer.queue_services.map((qs, i) => qs.services && (
+                              <span key={i} className="bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider">
                                 {qs.services.service_name}
                               </span>
                             ))}
                           </div>
                         )}
+
+                        <div className="flex gap-2 w-full mt-4 relative z-10">
+                          <button onClick={() => handleComplete(customer.id)} className="flex-1 h-12 bg-emerald-500 hover:bg-emerald-400 text-white font-black rounded-xl transition-all active:scale-[0.98] text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20">
+                            <Check className="w-4 h-4" /> Terminer 
+                          </button>
+                          <button onClick={() => handleFreeze(customer.id)} className="w-12 h-12 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center shrink-0 border border-white/10">
+                            <UserX className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // CARD #2+: WAITING (✨ FIXED: Much more compact UI)
+                  return (
+                    <div 
+                      key={customer.id} 
+                      className={`p-4 rounded-3xl shadow-sm flex flex-col gap-3 transition-all ${
+                        isConfirmed 
+                          ? 'bg-emerald-50/40 border border-emerald-400 shadow-emerald-500/10' 
+                          : isAlerted 
+                            ? 'bg-orange-50/40 border border-orange-300 shadow-orange-500/10' 
+                            : 'bg-white border border-slate-100'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex gap-3">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                            isConfirmed ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : isAlerted ? 'bg-orange-100 border-orange-200 text-orange-700' : 'bg-slate-100 border-slate-200 text-slate-600'
+                          }`}>
+                            <span className="font-black text-sm">#{index + 1}</span>
+                          </div>
+                          <div>
+                            <h3 className="text-base font-black text-slate-900 capitalize leading-tight">{displayName}</h3>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                              {displayPhone === 'Sur place' ? (
+                                <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider">Sur Place</span>
+                              ) : (
+                                <span className="text-slate-500 font-mono text-[11px]">{displayPhone}</span>
+                              )}
+                              
+                              {isConfirmed && (
+                                <span className="flex items-center text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">
+                                  <CheckCircle2 className="w-2.5 h-2.5 mr-0.5" /> En route
+                                </span>
+                              )}
+                              {isAlerted && !isConfirmed && (
+                                <span className="flex items-center text-[9px] font-bold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-full animate-pulse">
+                                  <Timer className="w-2.5 h-2.5 mr-0.5" /> Attente
+                                </span>
+                              )}
+                            </div>
+
+                            {/* COMPACT SERVICE TAGS */}
+                            {(customer.queue_services?.length ?? 0) > 0 && (
+                              <div className="flex flex-wrap items-center gap-1 mt-2">
+                                {customer.total_estimated_time && (
+                                  <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider flex items-center gap-0.5">
+                                    <Timer className="w-2.5 h-2.5" /> {customer.total_estimated_time}m
+                                  </span>
+                                )}
+                                {customer.queue_services?.map((qs, i) => qs.services && (
+                                  <span key={i} className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider">
+                                    {qs.services.service_name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* COMPACT ACTION BUTTONS ROW */}
+                      <div className="grid grid-cols-2 gap-2 mt-1">
+                        {displayPhone !== 'Sur place' && !isConfirmed && (
+                          <div className="col-span-2">
+                            {isAlerted ? (
+                              <button disabled className={`w-full h-10 font-black rounded-xl text-xs flex items-center justify-center gap-2 ${timeRemaining > 0 ? 'bg-orange-500 text-white' : 'bg-red-500 text-white'}`}>
+                                <Timer className="w-4 h-4" /> {timeRemaining > 0 ? formatTime(timeRemaining) : "Temps écoulé"}
+                              </button>
+                            ) : (
+                              <button 
+                                onClick={() => handleNotify(customer)} 
+                                disabled={isSendingAuth === customer.id} 
+                                className="w-full h-10 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl active:scale-[0.98] disabled:opacity-50 text-xs"
+                              >
+                                {isSendingAuth === customer.id ? (
+                                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                ) : (
+                                  <><Bell className="w-3.5 h-3.5 text-amber-400" /> Alerter (App)</>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        )}
                         
+                        <button onClick={() => handleComplete(customer.id)} className="h-10 flex items-center justify-center gap-1.5 font-bold rounded-xl active:scale-[0.98] text-xs bg-emerald-50 text-emerald-600 border border-emerald-100">
+                          <Check className="w-3.5 h-3.5" /> Terminé
+                        </button>
+                        <button onClick={() => handleFreeze(customer.id)} className="h-10 flex items-center justify-center gap-1.5 bg-blue-50 text-blue-600 font-bold rounded-xl active:scale-[0.98] text-xs border border-blue-100">
+                          <Snowflake className="w-3.5 h-3.5" /> Pause
+                        </button>
                       </div>
                     </div>
-                  </div>
+                  );
+                })}
+              </div>
+            )}
 
-                  <div className="flex flex-col gap-2 w-full mt-1">
-                    {displayPhone !== 'Sur place' && (
-                      <>
-                        {isConfirmed ? (
-                          <div className="w-full h-12 bg-emerald-100 text-emerald-700 border border-emerald-200 font-black rounded-xl transition-all flex items-center justify-center gap-2 mb-1">
-                            <CheckCircle2 className="w-5 h-5" /> Le client est en route !
-                          </div>
-                        ) : isAlerted ? (
-                          <button disabled className={`w-full h-12 mb-1 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm ${timeRemaining > 0 ? 'bg-orange-500 text-white shadow-orange-500/20' : 'bg-red-500 text-white shadow-red-500/20'}`}>
-                            <Timer className="w-5 h-5" /> {timeRemaining > 0 ? formatTime(timeRemaining) : "Temps écoulé"}
-                          </button>
-                        ) : (
-                          <button 
-                            onClick={() => handleNotify(customer)} 
-                            disabled={isSendingAuth === customer.id} 
-                            className="w-full h-12 mb-1 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all active:scale-[0.98] disabled:opacity-50 text-sm"
-                          >
-                            {isSendingAuth === customer.id ? (
-                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                            ) : (
-                              <><Bell className="w-4 h-4 text-amber-400" /> Alerter le client (App)</>
-                            )}
-                          </button>
-                        )}
-                      </>
-                    )}
-
-                    <div className="flex gap-2 w-full">
-                      <button onClick={() => handleComplete(customer.id)} className={`flex-1 h-12 flex items-center justify-center gap-2 font-bold rounded-xl transition-all active:scale-[0.98] text-sm ${isConfirmed ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}>
-                        <Check className="w-4 h-4" /> Terminé
-                      </button>
-                      <button onClick={() => handleFreeze(customer.id)} className="flex-1 h-12 flex items-center justify-center gap-2 bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold rounded-xl transition-all active:scale-[0.98] text-sm border border-blue-100">
-                        <Snowflake className="w-4 h-4" /> Pause (Absent)
-                      </button>
+            {/* FROZEN QUEUE */}
+            {frozenQueue.length > 0 && (
+              <div className="mt-6 animate-in fade-in slide-in-from-bottom-4">
+                <div className="flex items-center gap-2 mb-3 px-2">
+                  <Snowflake className="w-4 h-4 text-blue-500" />
+                  <h2 className="text-sm font-black text-slate-900 tracking-tight uppercase">Clients en pause</h2>
+                </div>
+                <div className="space-y-2">
+                  {frozenQueue.map(customer => (
+                    <div key={customer.id} className="bg-white p-3 rounded-2xl border border-blue-100 shadow-sm flex items-center justify-between">
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-900 capitalize">{customer.customers?.full_name || customer.customer_name}</h4>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleUnfreeze(customer.id)} className="h-8 px-3 bg-blue-50 text-blue-600 font-bold rounded-lg text-xs transition-colors active:scale-95">
+                          Réactiver
+                        </button>
+                        <button onClick={() => handleHardCancel(customer.id)} className="h-8 w-8 flex items-center justify-center bg-red-50 text-red-500 rounded-lg active:scale-95">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  ))}
                 </div>
-              );
-            })}
+              </div>
+            )}
           </div>
         )}
 
-        {frozenQueue.length > 0 && (
-          <div className="mt-8 animate-in fade-in slide-in-from-bottom-4">
-            <div className="flex items-center gap-2 mb-4 px-2">
-              <Snowflake className="w-5 h-5 text-blue-500" />
-              <h2 className="text-lg font-black text-slate-900 tracking-tight">Clients en pause</h2>
-            </div>
-            <div className="space-y-3">
-              {frozenQueue.map(customer => (
-                <div key={customer.id} className="bg-white p-4 rounded-2xl border border-blue-100 shadow-sm flex items-center justify-between">
+        {/* TAB 2: SETTINGS (Moved exactly as it was, just into a new tab) */}
+        {activeTab === 'settings' && (
+          <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+            <h2 className="text-2xl font-black text-slate-900 mb-6 tracking-tight flex items-center gap-2 px-2">
+              <Settings className="w-6 h-6 text-slate-400" /> Outils du Salon
+            </h2>
+
+            <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
+              <form onSubmit={handleUpdateProfile} className="space-y-4">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all relative overflow-hidden flex items-center gap-4">
+                  <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploadingImage} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                  <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm shrink-0">
+                    {profileImage ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={profileImage} alt="Salon" className="w-full h-full rounded-xl object-cover" />
+                    ) : (
+                      <UploadCloud className="w-5 h-5 text-amber-500" />
+                    )}
+                  </div>
                   <div>
-                    <h4 className="font-bold text-slate-900 capitalize">{customer.customers?.full_name || customer.customer_name}</h4>
-                    <p className="text-xs text-slate-500 font-medium mt-0.5">Mis en pause</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => handleUnfreeze(customer.id)} className="h-10 px-4 bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold rounded-xl text-sm transition-colors active:scale-95">
-                      Réactiver
-                    </button>
-                    <button onClick={() => handleHardCancel(customer.id)} className="h-10 px-3 bg-red-50 hover:bg-red-100 text-red-500 font-bold rounded-xl transition-colors active:scale-95" title="Supprimer définitivement">
-                      <X className="w-4 h-4" />
-                    </button>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Photo Profil</label>
+                    <p className="text-sm font-bold text-slate-900">{uploadingImage ? 'Téléchargement...' : 'Appuyez pour modifier'}</p>
                   </div>
                 </div>
-              ))}
+
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Lien Google Maps</label>
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
+                    <input type="url" value={location} onChange={(e)=>setLocation(e.target.value)} placeholder="http://maps.google.com/..." className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-900 placeholder-slate-400 focus:ring-0 outline-none" />
+                  </div>
+                </div>
+
+                <button type="submit" disabled={isSavingProfile} className="w-full h-12 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-70 mt-2">
+                  <Save className="w-4 h-4 text-amber-400" /> Enregistrer les infos
+                </button>
+              </form>
             </div>
+
+            {!isLoading && shareLink && (
+              <div className="bg-slate-900 p-6 rounded-3xl shadow-xl relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
+                
+                <div className="flex items-center gap-5 relative z-10 mb-6">
+                  <div className="bg-white p-2 rounded-2xl shadow-lg shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={qrCodeUrl} alt="QR Code" className="w-20 h-20 rounded-xl" crossOrigin="anonymous" />
+                  </div>
+                  <div>
+                    <h3 className="text-white font-black text-lg">Affiche QR Code</h3>
+                    <p className="text-slate-400 text-xs font-medium mt-0.5">Pour vos clients au salon</p>
+                  </div>
+                </div>
+
+                <div className="relative z-10 flex flex-col gap-3">
+                  <button onClick={downloadQR} className="w-full h-12 bg-amber-500 active:bg-amber-400 text-slate-900 font-black rounded-xl transition-all flex items-center justify-center gap-2">
+                    <Download className="w-4 h-4" /> Télécharger l'Affiche
+                  </button>
+                  <button onClick={() => copyToClipboard(shareLink)} className="w-full h-12 bg-white/10 active:bg-white/20 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-white/10">
+                    {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-amber-400" />}
+                    {copied ? 'Lien Copié !' : 'Copier le lien direct'}
+                  </button>
+                  
+                  <button 
+                    onClick={() => setShowSettingsModal(true)} 
+                    className="w-full h-12 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm mt-3"
+                  >
+                    <Briefcase className="w-4 h-4 text-amber-500" /> Gérer Prestations & Équipe
+                  </button>
+
+                  <Link href="/analytics" className="w-full h-12 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
+                    <BarChart3 className="w-4 h-4 text-blue-500" /> Voir les statistiques du jour
+                  </Link>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        <div className="mt-12 pt-8 border-t border-slate-200/60">
-          <h2 className="text-xl font-black text-slate-900 mb-4 tracking-tight flex items-center gap-2">
-            <Settings className="w-5 h-5 text-slate-400" /> Outils du Salon
-          </h2>
-
-          <div className="bg-white p-5 sm:p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6">
-            <form onSubmit={handleUpdateProfile} className="space-y-4">
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all relative overflow-hidden flex items-center gap-4">
-                <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploadingImage} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm shrink-0">
-                  {profileImage ? (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img src={profileImage} alt="Salon" className="w-full h-full rounded-xl object-cover" />
-                  ) : (
-                    <UploadCloud className="w-5 h-5 text-amber-500" />
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Photo Profil</label>
-                  <p className="text-sm font-bold text-slate-900">{uploadingImage ? 'Téléchargement...' : 'Appuyez pour modifier'}</p>
-                </div>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all">
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Lien Google Maps</label>
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
-                  <input type="url" value={location} onChange={(e)=>setLocation(e.target.value)} placeholder="http://maps.google.com/..." className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-900 placeholder-slate-400 focus:ring-0 outline-none" />
-                </div>
-              </div>
-
-              <button type="submit" disabled={isSavingProfile} className="w-full h-12 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-70 mt-2">
-                <Save className="w-4 h-4 text-amber-400" /> Enregistrer les infos
-              </button>
-            </form>
-          </div>
-
-          {!isLoading && shareLink && (
-            <div className="bg-slate-900 p-6 rounded-[2rem] shadow-xl relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
-              
-              <div className="flex items-center gap-5 relative z-10 mb-6">
-                <div className="bg-white p-2 rounded-2xl shadow-lg shrink-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={qrCodeUrl} alt="QR Code" className="w-20 h-20 rounded-xl" crossOrigin="anonymous" />
-                </div>
-                <div>
-                  <h3 className="text-white font-black text-lg">Affiche QR Code</h3>
-                  <p className="text-slate-400 text-xs font-medium mt-0.5">Pour vos clients au salon</p>
-                </div>
-              </div>
-
-              <div className="relative z-10 flex flex-col gap-3">
-                <button onClick={downloadQR} className="w-full h-12 bg-amber-500 active:bg-amber-400 text-slate-900 font-black rounded-xl transition-all flex items-center justify-center gap-2">
-                  <Download className="w-4 h-4" /> Télécharger l'Affiche
-                </button>
-                <button onClick={() => copyToClipboard(shareLink)} className="w-full h-12 bg-white/10 active:bg-white/20 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-white/10">
-                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-amber-400" />}
-                  {copied ? 'Lien Copié !' : 'Copier le lien direct'}
-                </button>
-                
-                {/* ✨ NEW: Management Settings Button */}
-                <button 
-                  onClick={() => setShowSettingsModal(true)} 
-                  className="w-full h-12 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm mt-3"
-                >
-                  <Briefcase className="w-4 h-4 text-amber-500" /> Gérer Prestations & Équipe
-                </button>
-
-                <Link href="/analytics" className="w-full h-12 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
-                  <BarChart3 className="w-4 h-4 text-blue-500" /> Voir les statistiques du jour
-                </Link>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* WALK IN MODAL */}
+        {/* WALK IN MODAL (Unchanged) */}
         {showWalkInModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 sm:p-8 shadow-2xl relative animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
@@ -965,11 +972,10 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ✨ NEW: SETTINGS MANAGEMENT MODAL */}
+        {/* SETTINGS MANAGEMENT MODAL (Unchanged) */}
         {showSettingsModal && (
           <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
             <div className="bg-slate-50 rounded-t-[2.5rem] sm:rounded-[2.5rem] w-full max-w-lg h-[90vh] sm:h-[85vh] shadow-2xl relative flex flex-col animate-in slide-in-from-bottom-8 sm:zoom-in-95 duration-300 overflow-hidden">
-              
               <div className="p-6 bg-white border-b border-slate-100 flex justify-between items-center shrink-0 z-10 shadow-sm">
                 <div>
                   <h3 className="text-2xl font-black text-slate-900 tracking-tight">Gestion du Salon</h3>
@@ -981,8 +987,6 @@ export default function Dashboard() {
               </div>
 
               <div className="flex-1 overflow-y-auto p-6 space-y-8">
-                
-                {/* SERVICES SECTION */}
                 <section>
                   <div className="flex items-center gap-2 mb-4">
                     <Scissors className="w-5 h-5 text-amber-500" />
@@ -1026,7 +1030,6 @@ export default function Dashboard() {
 
                 <hr className="border-slate-200/60" />
 
-                {/* STAFF SECTION */}
                 <section>
                   <div className="flex items-center gap-2 mb-4">
                     <User className="w-5 h-5 text-blue-500" />
@@ -1073,12 +1076,21 @@ export default function Dashboard() {
 
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-slate-100 z-40 pb-8 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
+      {/* ✨ NEW: BOTTOM NAVIGATION BAR */}
+      <div className="fixed bottom-0 left-0 right-0 h-20 bg-white border-t border-slate-200 flex items-center justify-around z-40 px-6 pb-2">
         <button 
-          onClick={() => setShowWalkInModal(true)}
-          className="w-full h-16 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-2xl transition-colors text-lg flex items-center justify-center gap-3 shadow-lg shadow-slate-900/20"
+          onClick={() => setActiveTab('queue')} 
+          className={`flex flex-col items-center justify-center w-24 transition-colors ${activeTab === 'queue' ? 'text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
         >
-          <UserPlus className="w-5 h-5 text-amber-400" /> Ajouter Sur Place
+          <LayoutList className="w-6 h-6" />
+          <span className="text-[10px] font-black mt-1 uppercase tracking-wider">File</span>
+        </button>
+        <button 
+          onClick={() => setActiveTab('settings')} 
+          className={`flex flex-col items-center justify-center w-24 transition-colors ${activeTab === 'settings' ? 'text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+        >
+          <Settings className="w-6 h-6" />
+          <span className="text-[10px] font-black mt-1 uppercase tracking-wider">Paramètres</span>
         </button>
       </div>
 
