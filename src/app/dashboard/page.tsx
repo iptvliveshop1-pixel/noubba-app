@@ -3,16 +3,27 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Smartphone, Store, User, ArrowRight, Timer, Scissors } from 'lucide-react';
+import Link from 'next/link';
+import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Smartphone, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Briefcase, Plus, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
 
 type Customer = {
   id: string;
-  customer_id?: string; // ✨ ADDED FOR PUSH NOTIFICATIONS
+  customer_id?: string; 
   customer_name: string;
   whatsapp_number: string;
   alerted_at?: string;
   is_confirmed?: boolean;
+  status?: string; 
+  frozen_at?: string; 
+  total_estimated_time?: number | null;
   customers?: { full_name: string; phone_number: string };
+  queue_services?: {
+    services?: {
+      service_name: string;
+      duration_minutes: number;
+      price_dh: number;
+    }
+  }[];
 };
 
 const formatTime = (seconds: number) => {
@@ -23,6 +34,7 @@ const formatTime = (seconds: number) => {
 
 export default function Dashboard() {
   const [queue, setQueue] = useState<Customer[]>([]);
+  const [frozenQueue, setFrozenQueue] = useState<Customer[]>([]); 
   const [isLoading, setIsLoading] = useState(true);
   const [isApproved, setIsApproved] = useState(false);
   
@@ -45,6 +57,19 @@ export default function Dashboard() {
   const [showWalkInModal, setShowWalkInModal] = useState(false);
   const [walkInName, setWalkInName] = useState('');
   const [isAddingWalkIn, setIsAddingWalkIn] = useState(false);
+
+  // ✨ NEW: Settings Modal State
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [services, setServices] = useState<any[]>([]);
+  const [staff, setStaff] = useState<any[]>([]);
+  
+  const [newServiceName, setNewServiceName] = useState('');
+  const [newServiceDuration, setNewServiceDuration] = useState('');
+  const [newServicePrice, setNewServicePrice] = useState('');
+  const [isAddingService, setIsAddingService] = useState(false);
+
+  const [newStaffName, setNewStaffName] = useState('');
+  const [isAddingStaff, setIsAddingStaff] = useState(false);
 
   const [location, setLocation] = useState('');
   const [profileImage, setProfileImage] = useState('');
@@ -71,15 +96,24 @@ export default function Dashboard() {
   const fetchQueueOnly = async (bId: string) => {
     const { data, error } = await supabase
       .from('queue')
-      .select('*, customers(full_name, phone_number)') 
+      .select(`
+        *, 
+        customers(full_name, phone_number),
+        queue_services (
+          services (service_name, duration_minutes, price_dh)
+        )
+      `) 
       .eq('barber_id', bId) 
-      .eq('status', 'waiting')
+      .in('status', ['waiting', 'frozen'])
       .order('joined_at', { ascending: true }); 
 
     if (!error && data) {
       let shouldPlaySound = false;
+      
+      const activeClients = data.filter(c => c.status === 'waiting');
+      const frozenClients = data.filter(c => c.status === 'frozen');
 
-      data.forEach(customer => {
+      activeClients.forEach(customer => {
         if (customer.is_confirmed && !confirmedIds.current.has(customer.id)) {
           shouldPlaySound = true;
           confirmedIds.current.add(customer.id); 
@@ -97,8 +131,18 @@ export default function Dashboard() {
         audio.play().catch(e => console.log("Audio blocked by browser:", e));
       }
 
-      setQueue(data);
+      setQueue(activeClients as Customer[]);
+      setFrozenQueue(frozenClients as Customer[]);
     }
+  };
+
+  // ✨ NEW: Fetch Services and Staff
+  const fetchSettingsData = async (bId: string) => {
+    const { data: sData } = await supabase.from('services').select('*').eq('barber_id', bId).order('created_at', { ascending: true });
+    if (sData) setServices(sData);
+
+    const { data: stData } = await supabase.from('staff').select('*').eq('barber_id', bId).order('created_at', { ascending: true });
+    if (stData) setStaff(stData);
   };
 
   useEffect(() => {
@@ -136,6 +180,7 @@ export default function Dashboard() {
       setProfileImage(barber.profile_image_url || '');
 
       await fetchQueueOnly(barber.id);
+      await fetchSettingsData(barber.id); // Fetch for settings modal
       setIsLoading(false);
     };
 
@@ -149,6 +194,86 @@ export default function Dashboard() {
     }, 5000);
     return () => clearInterval(interval);
   }, [barberId]);
+
+  // ✨ NEW: Service Management Handlers
+  const handleAddService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newServiceName || !newServiceDuration || !newServicePrice || !barberId) return;
+    
+    setIsAddingService(true);
+    const toastId = toast.loading("Ajout en cours...", { style: { borderRadius: '12px' }});
+
+    const { data, error } = await supabase.from('services').insert([{
+      barber_id: barberId,
+      service_name: newServiceName,
+      duration_minutes: parseInt(newServiceDuration),
+      price_dh: parseInt(newServicePrice)
+    }]).select();
+
+    if (!error && data) {
+      setServices(prev => [...prev, data[0]]);
+      setNewServiceName('');
+      setNewServiceDuration('');
+      setNewServicePrice('');
+      toast.success("Prestation ajoutée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
+    } else {
+      toast.error("Erreur d'ajout.", { id: toastId });
+    }
+    setIsAddingService(false);
+  };
+
+  const handleDeleteService = async (id: string) => {
+    const confirm = window.confirm("Supprimer cette prestation ?");
+    if (!confirm) return;
+
+    const { error } = await supabase.from('services').delete().eq('id', id);
+    if (!error) {
+      setServices(prev => prev.filter(s => s.id !== id));
+      toast.success("Prestation supprimée !", { style: { borderRadius: '12px', background: '#333', color: '#fff' }});
+    }
+  };
+
+  // ✨ NEW: Staff Management Handlers
+  const handleAddStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStaffName || !barberId) return;
+    
+    setIsAddingStaff(true);
+    const toastId = toast.loading("Ajout en cours...", { style: { borderRadius: '12px' }});
+
+    const { data, error } = await supabase.from('staff').insert([{
+      barber_id: barberId,
+      name: newStaffName,
+      is_available: true
+    }]).select();
+
+    if (!error && data) {
+      setStaff(prev => [...prev, data[0]]);
+      setNewStaffName('');
+      toast.success("Membre ajouté !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
+    } else {
+      toast.error("Erreur d'ajout.", { id: toastId });
+    }
+    setIsAddingStaff(false);
+  };
+
+  const handleToggleStaffAvailability = async (id: string, currentStatus: boolean) => {
+    const { error } = await supabase.from('staff').update({ is_available: !currentStatus }).eq('id', id);
+    if (!error) {
+      setStaff(prev => prev.map(s => s.id === id ? { ...s, is_available: !currentStatus } : s));
+    }
+  };
+
+  const handleDeleteStaff = async (id: string) => {
+    const confirm = window.confirm("Supprimer ce membre de l'équipe ?");
+    if (!confirm) return;
+
+    const { error } = await supabase.from('staff').delete().eq('id', id);
+    if (!error) {
+      setStaff(prev => prev.filter(s => s.id !== id));
+      toast.success("Membre supprimé !", { style: { borderRadius: '12px', background: '#333', color: '#fff' }});
+    }
+  };
 
   const handleCompleteOnboarding = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -244,24 +369,56 @@ export default function Dashboard() {
   const handleComplete = async (customerId: string) => {
     const { error } = await supabase.from('queue').update({ status: 'completed' }).eq('id', customerId);
     if (!error) {
-      setQueue(prev => prev.filter(c => c.id !== customerId));
+      if (barberId) fetchQueueOnly(barberId);
       toast.success("Coupe terminée !", { icon: '✨', style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
     } else {
       toast.error("Erreur de mise à jour.");
     }
   };
 
-  const handleCancel = async (customerId: string) => {
-    const { error } = await supabase.from('queue').update({ status: 'cancelled' }).eq('id', customerId);
+  const handleFreeze = async (customerId: string) => {
+    const toastId = toast.loading("Mise en pause...", { style: { borderRadius: '12px' }});
+    const { error } = await supabase.from('queue').update({ 
+      status: 'frozen',
+      frozen_at: new Date().toISOString(),
+      alerted_at: null, 
+      is_confirmed: false
+    }).eq('id', customerId);
+
     if (!error) {
-      setQueue(prev => prev.filter(c => c.id !== customerId));
-      toast.success("Client retiré.", { icon: '👋', style: { borderRadius: '12px', background: '#333', color: '#fff' }});
+      if (barberId) fetchQueueOnly(barberId);
+      toast.success("Client mis en pause.", { id: toastId, icon: '❄️', style: { borderRadius: '12px', background: '#3b82f6', color: '#fff' }});
     } else {
-      toast.error("Erreur d'annulation.");
+      toast.error("Erreur.", { id: toastId });
     }
   };
 
-  // ✨ THE UPDATED PUSH NOTIFICATION FUNCTION
+  const handleUnfreeze = async (customerId: string) => {
+    const toastId = toast.loading("Réactivation...", { style: { borderRadius: '12px' }});
+    const { error } = await supabase.from('queue').update({ 
+      status: 'waiting',
+      frozen_at: null
+    }).eq('id', customerId);
+
+    if (!error) {
+      if (barberId) fetchQueueOnly(barberId);
+      toast.success("Client réactivé !", { id: toastId, icon: '🔥', style: { borderRadius: '12px', background: '#f59e0b', color: '#fff' }});
+    } else {
+      toast.error("Erreur.", { id: toastId });
+    }
+  };
+
+  const handleHardCancel = async (customerId: string) => {
+    const confirm = window.confirm("Supprimer définitivement ce client de la file ?");
+    if (!confirm) return;
+
+    const { error } = await supabase.from('queue').update({ status: 'cancelled' }).eq('id', customerId);
+    if (!error) {
+      if (barberId) fetchQueueOnly(barberId);
+      toast("Client retiré.", { icon: '👋', style: { borderRadius: '12px', background: '#333', color: '#fff' }});
+    }
+  };
+
   const handleNotify = async (customer: Customer) => {
     setIsSendingAuth(customer.id);
     const toastId = toast.loading("Alerte en cours...", { style: { borderRadius: '12px' }}); 
@@ -277,7 +434,6 @@ export default function Dashboard() {
 
       setTimers(prev => ({ ...prev, [customer.id]: 600 })); 
 
-      // 🔥 THE NEW API CALL: Wake up the client's phone!
       if (customer.customer_id) {
         fetch('/api/push', {
           method: 'POST',
@@ -312,12 +468,12 @@ export default function Dashboard() {
       customer_name: walkInName,
       whatsapp_number: 'Sur place',
       status: 'waiting'
-    }]).select();
+    }]).select(`*, customers(full_name, phone_number), queue_services(services(service_name, duration_minutes, price_dh))`);
 
     if (error) {
       toast.error("Erreur d'ajout.", { id: toastId });
     } else if (data) {
-      setQueue(prev => [...prev, data[0]]);
+      setQueue(prev => [...prev, data[0] as Customer]);
       toast.success("Client ajouté !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
       setShowWalkInModal(false);
       setWalkInName('');
@@ -524,7 +680,6 @@ export default function Dashboard() {
               const displayPhone = customer.customers?.phone_number || customer.whatsapp_number;
               const timeRemaining = timers[customer.id] || 0;
 
-              // ✨ NEW: THE "IN CHAIR" CARD FOR POSITION #1
               if (index === 0) {
                 return (
                   <div key={customer.id} className="p-6 rounded-[2rem] bg-slate-900 text-white shadow-xl shadow-slate-900/10 border border-slate-800 relative overflow-hidden transition-all duration-500">
@@ -550,6 +705,17 @@ export default function Dashboard() {
                               </>
                             )}
                           </div>
+                          
+                          {customer.queue_services && customer.queue_services.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {customer.queue_services.map((qs, i) => qs.services && (
+                                <span key={i} className="bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">
+                                  {qs.services.service_name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
                         </div>
                       </div>
                     </div>
@@ -558,7 +724,7 @@ export default function Dashboard() {
                       <button onClick={() => handleComplete(customer.id)} className="flex-1 h-14 bg-emerald-500 hover:bg-emerald-400 text-white font-black rounded-xl transition-all active:scale-[0.98] text-lg flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20">
                         <Check className="w-5 h-5" /> Terminer la coupe
                       </button>
-                      <button onClick={() => handleCancel(customer.id)} className="w-14 h-14 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center shrink-0 border border-white/10">
+                      <button onClick={() => handleFreeze(customer.id)} className="w-14 h-14 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center shrink-0 border border-white/10" title="Mettre en pause (Absent)">
                         <UserX className="w-5 h-5" />
                       </button>
                     </div>
@@ -566,7 +732,6 @@ export default function Dashboard() {
                 );
               }
 
-              // WAITING QUEUE CARDS (Position #2 and beyond)
               return (
                 <div 
                   key={customer.id} 
@@ -608,6 +773,22 @@ export default function Dashboard() {
                             </span>
                           )}
                         </div>
+
+                        {(customer.queue_services?.length ?? 0) > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                            {customer.total_estimated_time && (
+                              <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                                <Timer className="w-3 h-3" /> {customer.total_estimated_time} min
+                              </span>
+                            )}
+                            {customer.queue_services?.map((qs, i) => qs.services && (
+                              <span key={i} className="bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">
+                                {qs.services.service_name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        
                       </div>
                     </div>
                   </div>
@@ -643,14 +824,41 @@ export default function Dashboard() {
                       <button onClick={() => handleComplete(customer.id)} className={`flex-1 h-12 flex items-center justify-center gap-2 font-bold rounded-xl transition-all active:scale-[0.98] text-sm ${isConfirmed ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}>
                         <Check className="w-4 h-4" /> Terminé
                       </button>
-                      <button onClick={() => handleCancel(customer.id)} className="flex-1 h-12 flex items-center justify-center gap-2 bg-slate-50 text-slate-500 hover:bg-slate-100 font-bold rounded-xl transition-all active:scale-[0.98] text-sm border border-slate-100">
-                        <UserX className="w-4 h-4" /> Absent
+                      <button onClick={() => handleFreeze(customer.id)} className="flex-1 h-12 flex items-center justify-center gap-2 bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold rounded-xl transition-all active:scale-[0.98] text-sm border border-blue-100">
+                        <Snowflake className="w-4 h-4" /> Pause (Absent)
                       </button>
                     </div>
                   </div>
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {frozenQueue.length > 0 && (
+          <div className="mt-8 animate-in fade-in slide-in-from-bottom-4">
+            <div className="flex items-center gap-2 mb-4 px-2">
+              <Snowflake className="w-5 h-5 text-blue-500" />
+              <h2 className="text-lg font-black text-slate-900 tracking-tight">Clients en pause</h2>
+            </div>
+            <div className="space-y-3">
+              {frozenQueue.map(customer => (
+                <div key={customer.id} className="bg-white p-4 rounded-2xl border border-blue-100 shadow-sm flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold text-slate-900 capitalize">{customer.customers?.full_name || customer.customer_name}</h4>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">Mis en pause</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleUnfreeze(customer.id)} className="h-10 px-4 bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold rounded-xl text-sm transition-colors active:scale-95">
+                      Réactiver
+                    </button>
+                    <button onClick={() => handleHardCancel(customer.id)} className="h-10 px-3 bg-red-50 hover:bg-red-100 text-red-500 font-bold rounded-xl transition-colors active:scale-95" title="Supprimer définitivement">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -714,11 +922,24 @@ export default function Dashboard() {
                   {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-amber-400" />}
                   {copied ? 'Lien Copié !' : 'Copier le lien direct'}
                 </button>
+                
+                {/* ✨ NEW: Management Settings Button */}
+                <button 
+                  onClick={() => setShowSettingsModal(true)} 
+                  className="w-full h-12 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm mt-3"
+                >
+                  <Briefcase className="w-4 h-4 text-amber-500" /> Gérer Prestations & Équipe
+                </button>
+
+                <Link href="/barber/analytics" className="w-full h-12 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm">
+                  <BarChart3 className="w-4 h-4 text-blue-500" /> Voir les statistiques du jour
+                </Link>
               </div>
             </div>
           )}
         </div>
 
+        {/* WALK IN MODAL */}
         {showWalkInModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 sm:p-8 shadow-2xl relative animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
@@ -743,6 +964,113 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        {/* ✨ NEW: SETTINGS MANAGEMENT MODAL */}
+        {showSettingsModal && (
+          <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
+            <div className="bg-slate-50 rounded-t-[2.5rem] sm:rounded-[2.5rem] w-full max-w-lg h-[90vh] sm:h-[85vh] shadow-2xl relative flex flex-col animate-in slide-in-from-bottom-8 sm:zoom-in-95 duration-300 overflow-hidden">
+              
+              <div className="p-6 bg-white border-b border-slate-100 flex justify-between items-center shrink-0 z-10 shadow-sm">
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900 tracking-tight">Gestion du Salon</h3>
+                  <p className="text-slate-500 font-medium text-sm">Modifiez vos services et votre équipe</p>
+                </div>
+                <button onClick={() => setShowSettingsModal(false)} className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full flex items-center justify-center transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                
+                {/* SERVICES SECTION */}
+                <section>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Scissors className="w-5 h-5 text-amber-500" />
+                    <h4 className="text-lg font-black text-slate-900">Vos Prestations</h4>
+                  </div>
+                  
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-4 shadow-sm">
+                    <form onSubmit={handleAddService} className="grid grid-cols-2 gap-3">
+                      <div className="col-span-2">
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Nom du service</label>
+                        <input type="text" required value={newServiceName} onChange={(e)=>setNewServiceName(e.target.value)} placeholder="Ex: Coupe Standard" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-900 transition-colors" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Durée (min)</label>
+                        <input type="number" required min="1" value={newServiceDuration} onChange={(e)=>setNewServiceDuration(e.target.value)} placeholder="30" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-900 transition-colors" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Prix (DH)</label>
+                        <input type="number" required min="0" value={newServicePrice} onChange={(e)=>setNewServicePrice(e.target.value)} placeholder="50" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm font-bold text-slate-900 outline-none focus:border-slate-900 transition-colors" />
+                      </div>
+                      <button type="submit" disabled={isAddingService} className="col-span-2 h-12 bg-slate-900 text-white font-bold rounded-xl mt-1 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all">
+                        <Plus className="w-4 h-4 text-amber-400" /> {isAddingService ? 'Ajout...' : 'Ajouter la prestation'}
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="space-y-2">
+                    {services.map(service => (
+                      <div key={service.id} className="bg-white border border-slate-100 p-4 rounded-2xl flex items-center justify-between shadow-sm">
+                        <div>
+                          <p className="font-bold text-slate-900">{service.service_name}</p>
+                          <p className="text-xs font-bold text-slate-400">{service.duration_minutes} min • {service.price_dh} DH</p>
+                        </div>
+                        <button onClick={() => handleDeleteService(service.id)} className="w-10 h-10 bg-red-50 text-red-500 hover:bg-red-100 rounded-xl flex items-center justify-center transition-colors">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <hr className="border-slate-200/60" />
+
+                {/* STAFF SECTION */}
+                <section>
+                  <div className="flex items-center gap-2 mb-4">
+                    <User className="w-5 h-5 text-blue-500" />
+                    <h4 className="text-lg font-black text-slate-900">Votre Équipe</h4>
+                  </div>
+                  
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-4 shadow-sm">
+                    <form onSubmit={handleAddStaff} className="flex gap-3">
+                      <div className="flex-1">
+                        <input type="text" required value={newStaffName} onChange={(e)=>setNewStaffName(e.target.value)} placeholder="Prénom du coiffeur" className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm font-bold text-slate-900 outline-none focus:border-slate-900 transition-colors" />
+                      </div>
+                      <button type="submit" disabled={isAddingStaff} className="h-12 px-5 bg-slate-900 text-white font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-all shrink-0">
+                        <Plus className="w-4 h-4 text-amber-400" />
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="space-y-2">
+                    {staff.map(member => (
+                      <div key={member.id} className="bg-white border border-slate-100 p-4 rounded-2xl flex items-center justify-between shadow-sm">
+                        <div>
+                          <p className="font-bold text-slate-900">{member.name}</p>
+                          <p className={`text-xs font-bold ${member.is_available ? 'text-emerald-500' : 'text-slate-400'}`}>
+                            {member.is_available ? 'Disponible' : 'Absent'}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => handleToggleStaffAvailability(member.id, member.is_available)} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${member.is_available ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                            {member.is_available ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
+                          </button>
+                          <button onClick={() => handleDeleteStaff(member.id)} className="w-10 h-10 bg-red-50 text-red-500 hover:bg-red-100 rounded-xl flex items-center justify-center transition-colors">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-slate-100 z-40 pb-8 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]">
