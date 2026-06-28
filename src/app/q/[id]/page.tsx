@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter, useParams } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { Scissors, MapPin, Users, ArrowRight, LogIn, CheckCircle2, Circle, X, UserCircle } from 'lucide-react';
+import { Scissors, MapPin, Users, ArrowRight, LogIn, CheckCircle2, Circle, X, UserCircle, Clock } from 'lucide-react';
 
 export default function SmartStorefront() {
   const params = useParams();
@@ -11,12 +11,11 @@ export default function SmartStorefront() {
   const router = useRouter();
 
   const [barber, setBarber] = useState<any>(null);
-  const [queueLength, setQueueLength] = useState(0);
+  const [totalQueueLength, setTotalQueueLength] = useState(0);
   
   const [services, setServices] = useState<any[]>([]);
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   
-  // ✨ NEW: Staff State
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
   
@@ -44,26 +43,7 @@ export default function SmartStorefront() {
       }
       setBarber(barberData);
 
-      // 2. Fetch Queue Length
-      const { count } = await supabase
-        .from('queue')
-        .select('*', { count: 'exact', head: true })
-        .eq('barber_id', barberId)
-        .eq('status', 'waiting');
-      setQueueLength(count || 0);
-
-      // 3. Fetch Available Services
-      const { data: servicesData } = await supabase
-        .from('services')
-        .select('*')
-        .eq('barber_id', barberId)
-        .order('price_dh', { ascending: true });
-      
-      if (servicesData) {
-        setServices(servicesData);
-      }
-
-      // ✨ NEW: Fetch Available Staff Members
+      // 2. Fetch Available Staff Members First
       const { data: staffData } = await supabase
         .from('staff')
         .select('*')
@@ -73,6 +53,25 @@ export default function SmartStorefront() {
         
       if (staffData) {
         setStaffMembers(staffData);
+      }
+
+      // 3. Fetch Total Queue Length
+      const { count } = await supabase
+        .from('queue')
+        .select('*', { count: 'exact', head: true })
+        .eq('barber_id', barberId)
+        .eq('status', 'waiting');
+      setTotalQueueLength(count || 0);
+
+      // 4. Fetch Available Services
+      const { data: servicesData } = await supabase
+        .from('services')
+        .select('*')
+        .eq('barber_id', barberId)
+        .order('price_dh', { ascending: true });
+      
+      if (servicesData) {
+        setServices(servicesData);
       }
 
       setIsLoading(false);
@@ -112,7 +111,6 @@ export default function SmartStorefront() {
 
     toast.dismiss(toastId);
     
-    // Open modal if they have services OR staff to choose from
     if (services.length > 0 || staffMembers.length > 0) {
       setShowServiceModal(true);
     } else {
@@ -142,7 +140,6 @@ export default function SmartStorefront() {
       return total + (service?.duration_minutes || 0);
     }, 0);
 
-    // ✨ UPDATED: Insert Main Queue Ticket WITH staff_id
     const { data: newTicket, error: queueError } = await supabase
       .from('queue')
       .insert([{
@@ -152,7 +149,7 @@ export default function SmartStorefront() {
         whatsapp_number: customerData.phone_number, 
         status: 'waiting',
         total_estimated_time: totalTime > 0 ? totalTime : null,
-        staff_id: selectedStaffId // Added Staff ID
+        staff_id: selectedStaffId 
       }])
       .select()
       .single();
@@ -208,6 +205,10 @@ export default function SmartStorefront() {
     );
   }
 
+  // ✨ FIX 3: Calculate the "true" wait position based on active chairs
+  const activeChairs = Math.max(1, staffMembers.length);
+  const effectiveQueuePosition = Math.ceil((totalQueueLength + 1) / activeChairs);
+
   return (
     <div className="min-h-[100dvh] bg-zinc-50 flex flex-col relative font-sans selection:bg-zinc-200">
       
@@ -254,13 +255,29 @@ export default function SmartStorefront() {
           <div className="absolute -right-8 -bottom-8 opacity-[0.02] pointer-events-none">
             <Users className="w-48 h-48" />
           </div>
-          <p className="text-xs font-black text-zinc-400 uppercase tracking-widest mb-2">Dans la file d'attente</p>
-          <div className="flex items-baseline gap-2 mb-1">
-            <h3 className="text-6xl font-black text-zinc-900 tracking-tighter leading-none">{queueLength}</h3>
-          </div>
-          <p className="text-zinc-500 font-medium text-sm">
-            {queueLength > 1 ? 'personnes avant vous' : queueLength === 1 ? 'personne avant vous' : 'Aucune attente !'}
-          </p>
+          <p className="text-xs font-black text-zinc-400 uppercase tracking-widest mb-2">Estimation d'attente</p>
+          
+          {totalQueueLength === 0 ? (
+            <>
+              <h3 className="text-4xl font-black text-emerald-500 tracking-tighter leading-none mb-2">Aucune</h3>
+              <p className="text-zinc-500 font-medium text-sm">Le salon est libre, prenez votre place !</p>
+            </>
+          ) : (
+            <>
+              <h3 className="text-6xl font-black text-zinc-900 tracking-tighter leading-none mb-1">
+                ~{effectiveQueuePosition}
+              </h3>
+              <p className="text-zinc-500 font-medium text-sm text-center">
+                personne{effectiveQueuePosition > 1 ? 's' : ''} en moyenne par coiffeur
+              </p>
+              
+              {staffMembers.length > 1 && (
+                <div className="mt-4 bg-zinc-50 border border-zinc-100 px-4 py-2 rounded-xl flex items-center gap-2 text-xs font-bold text-zinc-500">
+                  <Scissors className="w-4 h-4" /> {staffMembers.length} coiffeurs disponibles
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -299,7 +316,6 @@ export default function SmartStorefront() {
 
             <div className="overflow-y-auto pr-2 pb-6 [&::-webkit-scrollbar]:hidden flex-1">
               
-              {/* ✨ NEW: Staff Selection Row */}
               {staffMembers.length > 0 && (
                 <div className="mb-8">
                   <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest mb-3 flex items-center gap-2">
@@ -314,7 +330,7 @@ export default function SmartStorefront() {
                           : 'border-zinc-100 bg-white text-zinc-600 hover:border-zinc-200'
                       }`}
                     >
-                      N'importe qui
+                      Le Premier Dispo
                     </button>
                     {staffMembers.map(staff => (
                       <button
@@ -333,7 +349,6 @@ export default function SmartStorefront() {
                 </div>
               )}
 
-              {/* Services List */}
               {services.length > 0 && (
                 <div>
                   <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest mb-3 flex items-center gap-2">
@@ -350,15 +365,22 @@ export default function SmartStorefront() {
                             isSelected ? 'border-zinc-900 bg-zinc-50' : 'border-zinc-100 hover:border-zinc-200 bg-white'
                           }`}
                         >
-                          <div>
-                            <h4 className={`font-bold text-lg ${isSelected ? 'text-zinc-900' : 'text-zinc-700'}`}>
-                              {service.service_name}
-                            </h4>
-                            <p className="text-zinc-500 font-medium text-sm">
-                              {service.duration_minutes} min • {service.price_dh} DH
-                            </p>
+                          <div className="flex items-center gap-3">
+                            {/* ✨ NEW: Render Service Image if available */}
+                            {service.image_url && (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <img src={service.image_url} alt="" className="w-12 h-12 rounded-xl object-cover shrink-0 border border-zinc-200" />
+                            )}
+                            <div>
+                              <h4 className={`font-bold text-lg ${isSelected ? 'text-zinc-900' : 'text-zinc-700'}`}>
+                                {service.service_name}
+                              </h4>
+                              <p className="text-zinc-500 font-medium text-sm">
+                                {service.duration_minutes} min • {service.price_dh} DH
+                              </p>
+                            </div>
                           </div>
-                          {isSelected ? <CheckCircle2 className="w-6 h-6 text-zinc-900" /> : <Circle className="w-6 h-6 text-zinc-300" />}
+                          {isSelected ? <CheckCircle2 className="w-6 h-6 text-zinc-900 shrink-0" /> : <Circle className="w-6 h-6 text-zinc-300 shrink-0" />}
                         </button>
                       );
                     })}

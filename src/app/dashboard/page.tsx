@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
-import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Smartphone, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Briefcase, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon } from 'lucide-react';
+import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Briefcase, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon } from 'lucide-react';
 
 type Customer = {
   id: string;
@@ -17,7 +17,7 @@ type Customer = {
   frozen_at?: string; 
   delay_count?: number;
   total_estimated_time?: number | null;
-  staff_id?: string; // ✨ NEW: Link to specific chair
+  staff_id?: string; 
   staff?: { name: string };
   customers?: { full_name: string; phone_number: string };
   queue_services?: {
@@ -89,7 +89,7 @@ export default function Dashboard() {
 
   const [showWalkInModal, setShowWalkInModal] = useState(false);
   const [walkInName, setWalkInName] = useState('');
-  const [selectedStaffId, setSelectedStaffId] = useState<string>(''); // ✨ NEW: Assign walk-in to chair
+  const [selectedStaffId, setSelectedStaffId] = useState<string>(''); 
   const [isAddingWalkIn, setIsAddingWalkIn] = useState(false);
 
   const [services, setServices] = useState<any[]>([]);
@@ -175,14 +175,12 @@ export default function Dashboard() {
     }
   };
 
-  // ✨ UPGRADED: Per-Chair Sliding Window
   const triggerSlidingWindow = async (currentQueue: Customer[], currentStaff: any[]) => {
     const activeStaff = currentStaff.filter(s => s.is_available);
     
-    // Analyze the queue strictly per available chair
     for (const member of activeStaff) {
       const memberQueue = currentQueue.filter(c => c.staff_id === member.id);
-      const clientsToAnalyze = memberQueue.slice(0, 2); // Top 2 per chair (1 in seat, 1 on deck)
+      const clientsToAnalyze = memberQueue.slice(0, 2); 
 
       for (const client of clientsToAnalyze) {
         if (!client.alerted_at && !client.is_confirmed && client.whatsapp_number !== 'Sur place') {
@@ -248,7 +246,6 @@ export default function Dashboard() {
     if (stData) {
       setStaff(stData);
       staffRef.current = stData;
-      // Default the walk-in modal to the first available staff member
       const active = stData.filter(s => s.is_available);
       if (active.length > 0 && !selectedStaffId) {
         setSelectedStaffId(active[0].id);
@@ -303,6 +300,7 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [barberId]);
 
+  // ✨ FIX: Aggressive Error Handling for Service Images
   const handleServiceImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       if (!e.target.files || e.target.files.length === 0 || !barberId) return;
@@ -317,17 +315,21 @@ export default function Dashboard() {
         .from('service_images')
         .upload(fileName, webpBlob, { contentType: 'image/webp' });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error("Supabase Storage Error Details:", uploadError);
+        throw new Error(uploadError.message || "Erreur de permissions (RLS) ou de bucket.");
+      }
 
       const { data: { publicUrl } } = supabase.storage.from('service_images').getPublicUrl(fileName);
       setNewServiceImageUrl(publicUrl);
 
       toast.success("Image optimisée et ajoutée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
-    } catch (error) {
-      console.error(error);
-      toast.error("Erreur de téléchargement.");
+    } catch (error: any) {
+      console.error("Upload Catch Block Error:", error);
+      toast.error(`Échec: ${error.message}`, { duration: 5000 });
     } finally {
       setUploadingServiceImage(false);
+      if (e.target) e.target.value = ''; // Reset input so they can try the same file again
     }
   };
 
@@ -387,7 +389,6 @@ export default function Dashboard() {
       setStaff(prev => [...prev, data[0]]);
       staffRef.current = [...staffRef.current, data[0]];
       
-      // Auto-select if it's the first staff
       if (!selectedStaffId) setSelectedStaffId(data[0].id);
 
       setNewStaffName('');
@@ -405,10 +406,9 @@ export default function Dashboard() {
       setStaff(updated);
       staffRef.current = updated;
       
-      // Update walk-in selection safely
       const active = updated.filter(s => s.is_available);
       if (active.length > 0 && selectedStaffId === id && currentStatus) {
-        setSelectedStaffId(active[0].id); // Reassign if we just disabled the currently selected
+        setSelectedStaffId(active[0].id); 
       } else if (active.length > 0 && !selectedStaffId) {
         setSelectedStaffId(active[0].id);
       }
@@ -457,6 +457,7 @@ export default function Dashboard() {
     setIsOnboarding(false);
   };
 
+  // ✨ FIX: Aggressive Error Handling for Profile Images
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       if (!e.target.files || e.target.files.length === 0 || !barberId) return;
@@ -471,7 +472,10 @@ export default function Dashboard() {
         .from('barber_profiles')
         .upload(fileName, webpBlob, { contentType: 'image/webp' });
         
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error("Supabase Storage Error Details:", uploadError);
+        throw new Error(uploadError.message || "Erreur de permissions (RLS) ou de bucket.");
+      }
 
       const { data: { publicUrl } } = supabase.storage.from('barber_profiles').getPublicUrl(fileName);
 
@@ -479,11 +483,12 @@ export default function Dashboard() {
       await supabase.from('barbers').update({ profile_image_url: publicUrl }).eq('id', barberId);
 
       toast.success("Photo de profil optimisée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
-    } catch (error) {
-      console.error(error);
-      toast.error("Erreur de téléchargement.");
+    } catch (error: any) {
+      console.error("Upload Catch Block Error:", error);
+      toast.error(`Échec: ${error.message}`, { duration: 5000 });
     } finally {
       setUploadingImage(false);
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -615,7 +620,7 @@ export default function Dashboard() {
 
     const { data, error } = await supabase.from('queue').insert([{
       barber_id: barberId,
-      staff_id: selectedStaffId || null, // ✨ Assign to specific chair
+      staff_id: selectedStaffId || null,
       customer_name: walkInName,
       whatsapp_number: 'Sur place',
       status: 'waiting'
@@ -830,188 +835,190 @@ export default function Dashboard() {
               </div>
             ) : (
               <>
-                {/* ✨ PER-CHAIR RENDER LOOP */}
                 {activeStaff.length === 0 ? (
                   <div className="bg-red-50 text-red-500 p-6 rounded-3xl font-bold text-center mb-6 border border-red-100">
                     <UserX className="w-8 h-8 mx-auto mb-2 text-red-400" />
                     Aucun coiffeur n'est actuellement disponible.<br/>Activez un membre de l'équipe dans les paramètres.
                   </div>
                 ) : (
-                  activeStaff.map(member => {
-                    const memberQueue = queue.filter(q => q.staff_id === member.id);
-                    
-                    return (
-                      <div key={member.id} className="mb-8 bg-white border border-slate-100 rounded-[2rem] p-4 shadow-sm">
-                        
-                        <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
-                              <User className="w-5 h-5" />
-                            </div>
-                            <div>
-                              <h3 className="text-lg font-black text-slate-900 leading-tight">Fauteuil: {member.name}</h3>
-                              <p className="text-xs font-bold text-slate-400">{memberQueue.length} en attente</p>
+                  // ✨ FIX 1: CSS Grid added here
+                  <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {activeStaff.map(member => {
+                      const memberQueue = queue.filter(q => q.staff_id === member.id);
+                      
+                      return (
+                        <div key={member.id} className="bg-white border border-slate-100 rounded-[2rem] p-4 shadow-sm h-fit">
+                          
+                          <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                                <User className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <h3 className="text-lg font-black text-slate-900 leading-tight">Fauteuil: {member.name}</h3>
+                                <p className="text-xs font-bold text-slate-400">{memberQueue.length} en attente</p>
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        {memberQueue.length === 0 ? (
-                          <div className="py-6 text-center text-slate-400 text-sm font-medium">
-                            Fauteuil libre
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {memberQueue.map((customer, index) => {
-                              const isAlerted = !!customer.alerted_at;
-                              const isConfirmed = customer.is_confirmed;
-                              const displayName = customer.customers?.full_name || customer.customer_name;
-                              const displayPhone = customer.customers?.phone_number || customer.whatsapp_number;
-                              const timeRemaining = timers[customer.id] || 0;
+                          {memberQueue.length === 0 ? (
+                            <div className="py-6 text-center text-slate-400 text-sm font-medium">
+                              Fauteuil libre
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {memberQueue.map((customer, index) => {
+                                const isAlerted = !!customer.alerted_at;
+                                const isConfirmed = customer.is_confirmed;
+                                const displayName = customer.customers?.full_name || customer.customer_name;
+                                const displayPhone = customer.customers?.phone_number || customer.whatsapp_number;
+                                const timeRemaining = timers[customer.id] || 0;
 
-                              // CARD #1: IN CHAIR
-                              if (index === 0) {
-                                return (
-                                  <div key={customer.id} className="p-5 rounded-[1.5rem] bg-slate-900 text-white shadow-lg border border-slate-800 relative overflow-hidden transition-all">
-                                    <div className="absolute -right-8 -bottom-8 opacity-[0.05] pointer-events-none">
-                                      <Scissors className="w-40 h-40" />
-                                    </div>
-                                    <div className="flex justify-between items-start relative z-10">
-                                      <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/20">
-                                          <Scissors className="w-5 h-5 text-slate-900 animate-pulse" />
-                                        </div>
-                                        <div>
-                                          <span className="text-amber-400 font-bold text-[10px] uppercase tracking-widest block">Sur le fauteuil</span>
-                                          <h3 className="text-lg font-black text-white capitalize leading-tight">{displayName}</h3>
-                                          <div className="flex items-center gap-1 mt-0.5">
-                                            {displayPhone === 'Sur place' ? (
-                                              <span className="bg-white/10 text-slate-300 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider">Sur Place</span>
-                                            ) : (
-                                              <span className="text-slate-400 font-mono text-xs">{displayPhone}</span>
-                                            )}
+                                // CARD #1: IN CHAIR
+                                if (index === 0) {
+                                  return (
+                                    <div key={customer.id} className="p-5 rounded-[1.5rem] bg-slate-900 text-white shadow-lg border border-slate-800 relative overflow-hidden transition-all">
+                                      <div className="absolute -right-8 -bottom-8 opacity-[0.05] pointer-events-none">
+                                        <Scissors className="w-40 h-40" />
+                                      </div>
+                                      <div className="flex justify-between items-start relative z-10">
+                                        <div className="flex items-center gap-3">
+                                          <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/20">
+                                            <Scissors className="w-5 h-5 text-slate-900 animate-pulse" />
+                                          </div>
+                                          <div>
+                                            <span className="text-amber-400 font-bold text-[10px] uppercase tracking-widest block">Sur le fauteuil</span>
+                                            <h3 className="text-lg font-black text-white capitalize leading-tight">{displayName}</h3>
+                                            <div className="flex items-center gap-1 mt-0.5">
+                                              {displayPhone === 'Sur place' ? (
+                                                <span className="bg-white/10 text-slate-300 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider">Sur Place</span>
+                                              ) : (
+                                                <span className="text-slate-400 font-mono text-xs">{displayPhone}</span>
+                                              )}
+                                            </div>
                                           </div>
                                         </div>
                                       </div>
+
+                                      {customer.queue_services && customer.queue_services.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 mt-3 relative z-10">
+                                          {customer.queue_services.map((qs, i) => qs.services && (
+                                            <span key={i} className="bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                                              {qs.services.service_name}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      <div className="flex gap-2 w-full mt-4 relative z-10">
+                                        <button onClick={() => handleComplete(customer.id)} className="flex-1 h-12 bg-emerald-500 hover:bg-emerald-400 text-white font-black rounded-xl transition-all active:scale-[0.98] text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20">
+                                          <Check className="w-4 h-4" /> Terminer 
+                                        </button>
+                                        <button onClick={() => handleFreeze(customer.id)} className="w-12 h-12 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center shrink-0 border border-white/10">
+                                          <UserX className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                // CARD #2+: WAITING
+                                return (
+                                  <div 
+                                    key={customer.id} 
+                                    className={`p-4 rounded-[1.5rem] shadow-sm flex flex-col gap-3 transition-all ${
+                                      isConfirmed 
+                                        ? 'bg-emerald-50/40 border border-emerald-400 shadow-emerald-500/10' 
+                                        : isAlerted 
+                                          ? 'bg-orange-50/40 border border-orange-300 shadow-orange-500/10' 
+                                          : 'bg-slate-50 border border-slate-100'
+                                    }`}
+                                  >
+                                    <div className="flex justify-between items-start">
+                                      <div className="flex gap-3">
+                                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                                          isConfirmed ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : isAlerted ? 'bg-orange-100 border-orange-200 text-orange-700' : 'bg-slate-200 border-slate-300 text-slate-600'
+                                        }`}>
+                                          <span className="font-black text-sm">#{index + 1}</span>
+                                        </div>
+                                        <div>
+                                          <h3 className="text-base font-black text-slate-900 capitalize leading-tight">{displayName}</h3>
+                                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                            {displayPhone === 'Sur place' ? (
+                                              <span className="bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider">Sur Place</span>
+                                            ) : (
+                                              <span className="text-slate-500 font-mono text-[11px]">{displayPhone}</span>
+                                            )}
+                                            
+                                            {isConfirmed && (
+                                              <span className="flex items-center text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">
+                                                <CheckCircle2 className="w-2.5 h-2.5 mr-0.5" /> En route
+                                              </span>
+                                            )}
+                                            {isAlerted && !isConfirmed && (
+                                              <span className="flex items-center text-[9px] font-bold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-full animate-pulse">
+                                                <Timer className="w-2.5 h-2.5 mr-0.5" /> Attente
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          {(customer.queue_services?.length ?? 0) > 0 && (
+                                            <div className="flex flex-wrap items-center gap-1 mt-2">
+                                              {customer.queue_services?.map((qs, i) => qs.services && (
+                                                <span key={i} className="bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider">
+                                                  {qs.services.service_name}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
                                     </div>
 
-                                    {customer.queue_services && customer.queue_services.length > 0 && (
-                                      <div className="flex flex-wrap gap-1 mt-3 relative z-10">
-                                        {customer.queue_services.map((qs, i) => qs.services && (
-                                          <span key={i} className="bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider">
-                                            {qs.services.service_name}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    )}
-
-                                    <div className="flex gap-2 w-full mt-4 relative z-10">
-                                      <button onClick={() => handleComplete(customer.id)} className="flex-1 h-12 bg-emerald-500 hover:bg-emerald-400 text-white font-black rounded-xl transition-all active:scale-[0.98] text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20">
-                                        <Check className="w-4 h-4" /> Terminer 
+                                    <div className="grid grid-cols-2 gap-2 mt-1">
+                                      {displayPhone !== 'Sur place' && !isConfirmed && (
+                                        <div className="col-span-2">
+                                          {isAlerted ? (
+                                            <button disabled className={`w-full h-10 font-black rounded-xl text-xs flex items-center justify-center gap-2 ${timeRemaining > 0 ? 'bg-orange-500 text-white' : 'bg-red-500 text-white'}`}>
+                                              <Timer className="w-4 h-4" /> {timeRemaining > 0 ? formatTime(timeRemaining) : "Relégation auto..."}
+                                            </button>
+                                          ) : (
+                                            <button 
+                                              onClick={() => handleNotify(customer)} 
+                                              disabled={isSendingAuth === customer.id} 
+                                              className="w-full h-10 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl active:scale-[0.98] disabled:opacity-50 text-xs"
+                                            >
+                                              {isSendingAuth === customer.id ? (
+                                                <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                              ) : (
+                                                <><Bell className="w-3.5 h-3.5 text-amber-400" /> Alerter (App)</>
+                                              )}
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
+                                      
+                                      <button onClick={() => handleComplete(customer.id)} className="h-10 flex items-center justify-center gap-1.5 font-bold rounded-xl active:scale-[0.98] text-xs bg-emerald-50 text-emerald-600 border border-emerald-100">
+                                        <Check className="w-3.5 h-3.5" /> Terminé
                                       </button>
-                                      <button onClick={() => handleFreeze(customer.id)} className="w-12 h-12 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center shrink-0 border border-white/10">
-                                        <UserX className="w-4 h-4" />
+                                      <button onClick={() => handleFreeze(customer.id)} className="h-10 flex items-center justify-center gap-1.5 bg-blue-50 text-blue-600 font-bold rounded-xl active:scale-[0.98] text-xs border border-blue-100">
+                                        <Snowflake className="w-3.5 h-3.5" /> Pause
                                       </button>
                                     </div>
                                   </div>
                                 );
-                              }
-
-                              // CARD #2+: WAITING
-                              return (
-                                <div 
-                                  key={customer.id} 
-                                  className={`p-4 rounded-[1.5rem] shadow-sm flex flex-col gap-3 transition-all ${
-                                    isConfirmed 
-                                      ? 'bg-emerald-50/40 border border-emerald-400 shadow-emerald-500/10' 
-                                      : isAlerted 
-                                        ? 'bg-orange-50/40 border border-orange-300 shadow-orange-500/10' 
-                                        : 'bg-slate-50 border border-slate-100'
-                                  }`}
-                                >
-                                  <div className="flex justify-between items-start">
-                                    <div className="flex gap-3">
-                                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
-                                        isConfirmed ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : isAlerted ? 'bg-orange-100 border-orange-200 text-orange-700' : 'bg-slate-200 border-slate-300 text-slate-600'
-                                      }`}>
-                                        <span className="font-black text-sm">#{index + 1}</span>
-                                      </div>
-                                      <div>
-                                        <h3 className="text-base font-black text-slate-900 capitalize leading-tight">{displayName}</h3>
-                                        <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                                          {displayPhone === 'Sur place' ? (
-                                            <span className="bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider">Sur Place</span>
-                                          ) : (
-                                            <span className="text-slate-500 font-mono text-[11px]">{displayPhone}</span>
-                                          )}
-                                          
-                                          {isConfirmed && (
-                                            <span className="flex items-center text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">
-                                              <CheckCircle2 className="w-2.5 h-2.5 mr-0.5" /> En route
-                                            </span>
-                                          )}
-                                          {isAlerted && !isConfirmed && (
-                                            <span className="flex items-center text-[9px] font-bold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-full animate-pulse">
-                                              <Timer className="w-2.5 h-2.5 mr-0.5" /> Attente
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        {(customer.queue_services?.length ?? 0) > 0 && (
-                                          <div className="flex flex-wrap items-center gap-1 mt-2">
-                                            {customer.queue_services?.map((qs, i) => qs.services && (
-                                              <span key={i} className="bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider">
-                                                {qs.services.service_name}
-                                              </span>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <div className="grid grid-cols-2 gap-2 mt-1">
-                                    {displayPhone !== 'Sur place' && !isConfirmed && (
-                                      <div className="col-span-2">
-                                        {isAlerted ? (
-                                          <button disabled className={`w-full h-10 font-black rounded-xl text-xs flex items-center justify-center gap-2 ${timeRemaining > 0 ? 'bg-orange-500 text-white' : 'bg-red-500 text-white'}`}>
-                                            <Timer className="w-4 h-4" /> {timeRemaining > 0 ? formatTime(timeRemaining) : "Relégation auto..."}
-                                          </button>
-                                        ) : (
-                                          <button 
-                                            onClick={() => handleNotify(customer)} 
-                                            disabled={isSendingAuth === customer.id} 
-                                            className="w-full h-10 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl active:scale-[0.98] disabled:opacity-50 text-xs"
-                                          >
-                                            {isSendingAuth === customer.id ? (
-                                              <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                            ) : (
-                                              <><Bell className="w-3.5 h-3.5 text-amber-400" /> Alerter (App)</>
-                                            )}
-                                          </button>
-                                        )}
-                                      </div>
-                                    )}
-                                    
-                                    <button onClick={() => handleComplete(customer.id)} className="h-10 flex items-center justify-center gap-1.5 font-bold rounded-xl active:scale-[0.98] text-xs bg-emerald-50 text-emerald-600 border border-emerald-100">
-                                      <Check className="w-3.5 h-3.5" /> Terminé
-                                    </button>
-                                    <button onClick={() => handleFreeze(customer.id)} className="h-10 flex items-center justify-center gap-1.5 bg-blue-50 text-blue-600 font-bold rounded-xl active:scale-[0.98] text-xs border border-blue-100">
-                                      <Snowflake className="w-3.5 h-3.5" /> Pause
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
 
                 {/* LEGACY OR UNASSIGNED CLIENTS */}
                 {unassignedQueue.length > 0 && (
-                  <div className="mb-8 bg-slate-100 border border-slate-200 rounded-[2rem] p-4 shadow-inner">
+                  <div className="mt-8 mb-8 bg-slate-100 border border-slate-200 rounded-[2rem] p-4 shadow-inner">
                     <div className="flex items-center gap-3 mb-4 pb-3">
                       <div className="w-10 h-10 bg-slate-200 text-slate-500 rounded-xl flex items-center justify-center">
                         <User className="w-5 h-5" />
@@ -1021,7 +1028,6 @@ export default function Dashboard() {
                         <p className="text-xs font-bold text-slate-500">Clients sans fauteuil assigné</p>
                       </div>
                     </div>
-                    {/* Render basic unassigned list */}
                     <div className="space-y-3">
                       {unassignedQueue.map(customer => (
                          <div key={customer.id} className="bg-white p-3 rounded-2xl flex justify-between items-center shadow-sm">
@@ -1241,7 +1247,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ✨ UPDATED WALK IN MODAL (CHAIR ASSIGNMENT) */}
+        {/* WALK IN MODAL (CHAIR ASSIGNMENT) */}
         {showWalkInModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 sm:p-8 shadow-2xl relative animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
