@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { LogOut, Scissors, MapPin, Timer, CheckCircle2, AlertCircle, X, Navigation, Store, QrCode, Camera, Clock, Star, Award } from 'lucide-react';
+import { LogOut, Scissors, MapPin, Timer, CheckCircle2, AlertCircle, X, Navigation, Store, QrCode, Camera, Clock, Star, Award, User } from 'lucide-react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -17,7 +17,6 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
-// ✨ NEW: Time formatter for the client countdown
 const formatTime = (seconds: number) => {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
@@ -32,7 +31,6 @@ export default function ClientDashboard() {
   const [loyaltyPoints, setLoyaltyPoints] = useState<number>(0);
   const [position, setPosition] = useState<number>(0);
   
-  // ✨ NEW: Synchronized Client-Side Countdown
   const [clientTimeRemaining, setClientTimeRemaining] = useState<number>(0);
 
   const [unreviewedTicket, setUnreviewedTicket] = useState<any>(null);
@@ -64,11 +62,12 @@ export default function ClientDashboard() {
     const { data: customer } = await supabase.from('customers').select('*').eq('id', session.user.id).single();
     if (customer) setCustomerName(customer.full_name);
 
-    // 1. Check for Active Queue
+    // ✨ 1. Fetch Queue AND the assigned Staff Member
     const { data: queueDataArray, error: queueError } = await supabase
       .from('queue')
       .select(`
         *,
+        staff (name),
         queue_services(
           services(service_name, duration_minutes, price_dh)
         )
@@ -83,8 +82,7 @@ export default function ClientDashboard() {
     const queueData = queueDataArray?.[0] || null;
 
     if (queueData) {
-      // ACTIVE QUEUE LOGIC
-      setUnreviewedTicket(null); // Hide review modal if they are currently waiting
+      setUnreviewedTicket(null);
 
       const { data: barberData } = await supabase
         .from('barbers')
@@ -94,12 +92,20 @@ export default function ClientDashboard() {
         
       setActiveQueue({ ...queueData, barbers: barberData || { shop_name: 'Salon' } });
       
-      const { data: aheadTickets } = await supabase
+      // ✨ 2. Calculate Position strictly for THIS specific Barber Chair
+      let positionQuery = supabase
         .from('queue')
         .select('id')
         .eq('barber_id', queueData.barber_id)
         .eq('status', 'waiting')
         .lt('joined_at', queueData.joined_at);
+
+      // If they selected a specific chair, only count people waiting for that chair
+      if (queueData.staff_id) {
+        positionQuery = positionQuery.eq('staff_id', queueData.staff_id);
+      }
+
+      const { data: aheadTickets } = await positionQuery;
 
       const currentPos = (aheadTickets?.length || 0) + 1;
       
@@ -123,13 +129,11 @@ export default function ClientDashboard() {
       }
 
     } else {
-      // NO ACTIVE QUEUE LOGIC
       setActiveQueue(null);
       setPosition(0);
       setClientTimeRemaining(0);
       hasPlayedAlertSound.current = false;
 
-      // Check for unreviewed completed tickets
       const { data: unreviewedData } = await supabase
         .from('queue')
         .select('*, barbers(id, shop_name, profile_image_url)')
@@ -146,7 +150,6 @@ export default function ClientDashboard() {
         setUnreviewedTicket(null);
       }
 
-      // Fetch Recent Barber & Loyalty Points
       const { data: pastVisits } = await supabase
         .from('queue')
         .select('barber_id')
@@ -184,7 +187,6 @@ export default function ClientDashboard() {
     fetchDashboardData();
   }, []);
 
-  // ✨ NEW: Synchronized 10-Minute Countdown Loop
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (activeQueue?.alerted_at && !activeQueue.is_confirmed) {
@@ -330,15 +332,21 @@ export default function ClientDashboard() {
     setIsDelaying(true);
     const toastId = toast.loading("Mise à jour de votre place...", { style: { borderRadius: '12px' } });
 
-    const { data: nextPerson } = await supabase
+    // ✨ Delay logic updated to strictly look at their assigned chair line
+    let delayQuery = supabase
       .from('queue')
       .select('joined_at')
       .eq('barber_id', activeQueue.barber_id)
       .eq('status', 'waiting')
       .gt('joined_at', activeQueue.joined_at)
       .order('joined_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+
+    if (activeQueue.staff_id) {
+      delayQuery = delayQuery.eq('staff_id', activeQueue.staff_id);
+    }
+
+    const { data: nextPerson } = await delayQuery.maybeSingle();
 
     let newJoinedAt;
     if (nextPerson) {
@@ -582,6 +590,15 @@ export default function ClientDashboard() {
               )}
 
               <div className="text-center border-b border-slate-100 pb-6 mb-6">
+                
+                {/* ✨ NEW: BARBER CHAIR ASSIGNMENT BADGE */}
+                {activeQueue.staff?.name && (
+                  <div className="bg-blue-50 text-blue-700 border border-blue-100 font-bold px-4 py-2 rounded-xl mb-4 inline-flex items-center gap-2 shadow-sm animate-in fade-in">
+                    <User className="w-4 h-4 text-blue-500" /> 
+                    <span>Vous êtes avec <span className="font-black">{activeQueue.staff.name}</span></span>
+                  </div>
+                )}
+
                 <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Votre Position</h2>
                 
                 <div className="flex justify-center items-center h-24 overflow-hidden my-2">
@@ -654,7 +671,6 @@ export default function ClientDashboard() {
                 </div>
               </div>
 
-              {/* ✨ NEW: Synchronized Countdown UI */}
               {activeQueue.alerted_at && !activeQueue.is_confirmed ? (
                 <button 
                   onClick={handleConfirmOnMyWay}

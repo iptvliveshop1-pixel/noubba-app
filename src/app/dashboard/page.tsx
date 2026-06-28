@@ -17,6 +17,8 @@ type Customer = {
   frozen_at?: string; 
   delay_count?: number;
   total_estimated_time?: number | null;
+  staff_id?: string; // ✨ NEW: Link to specific chair
+  staff?: { name: string };
   customers?: { full_name: string; phone_number: string };
   queue_services?: {
     services?: {
@@ -31,6 +33,34 @@ const formatTime = (seconds: number) => {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
+const convertToWebP = (file: File, quality = 0.8): Promise<Blob> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('Canvas context failed'));
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error('Serialization failed'));
+          },
+          'image/webp',
+          quality
+        );
+      };
+    };
+    reader.onerror = (error) => reject(error);
+  });
 };
 
 export default function Dashboard() {
@@ -59,6 +89,7 @@ export default function Dashboard() {
 
   const [showWalkInModal, setShowWalkInModal] = useState(false);
   const [walkInName, setWalkInName] = useState('');
+  const [selectedStaffId, setSelectedStaffId] = useState<string>(''); // ✨ NEW: Assign walk-in to chair
   const [isAddingWalkIn, setIsAddingWalkIn] = useState(false);
 
   const [services, setServices] = useState<any[]>([]);
@@ -67,7 +98,7 @@ export default function Dashboard() {
   const [newServiceName, setNewServiceName] = useState('');
   const [newServiceDuration, setNewServiceDuration] = useState('');
   const [newServicePrice, setNewServicePrice] = useState('');
-  const [newServiceImageUrl, setNewServiceImageUrl] = useState(''); // ✨ NEW: Service Image
+  const [newServiceImageUrl, setNewServiceImageUrl] = useState(''); 
   const [uploadingServiceImage, setUploadingServiceImage] = useState(false);
   const [isAddingService, setIsAddingService] = useState(false);
 
@@ -81,13 +112,11 @@ export default function Dashboard() {
 
   const [timers, setTimers] = useState<Record<string, number>>({});
   
-  // ✨ NEW: Refs to power the background automation algorithms
   const queueRef = useRef<Customer[]>([]);
   const staffRef = useRef<any[]>([]);
   const confirmedIds = useRef<Set<string>>(new Set());
   const router = useRouter();
 
-  // ✨ NEW: The Auto-Skip Penalty Algorithm
   const handleAutoPenalty = async (customer: Customer) => {
     const newJoinedAt = new Date(new Date().getTime() + 15 * 60000).toISOString();
     
@@ -102,7 +131,6 @@ export default function Dashboard() {
     if (barberId) fetchQueueOnly(barberId);
   };
 
-  // ✨ NEW: The internal clock that strikes at exactly 0:00
   useEffect(() => {
     const interval = setInterval(() => {
       setTimers(prev => {
@@ -113,7 +141,7 @@ export default function Dashboard() {
             if (next[id] === 0) {
               const customer = queueRef.current.find(c => c.id === id);
               if (customer && customer.alerted_at && !customer.is_confirmed) {
-                next[id] = -1; // Lock it so it doesn't loop
+                next[id] = -1; 
                 handleAutoPenalty(customer);
               }
             }
@@ -125,7 +153,6 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [barberId]);
 
-  // ✨ NEW: The Multi-Chair Sliding Window Automation
   const autoNotify = async (customer: Customer) => {
     try {
       await supabase.from('queue').update({ alerted_at: new Date().toISOString() }).eq('id', customer.id);
@@ -148,14 +175,19 @@ export default function Dashboard() {
     }
   };
 
+  // ✨ UPGRADED: Per-Chair Sliding Window
   const triggerSlidingWindow = async (currentQueue: Customer[], currentStaff: any[]) => {
-    const activeStaffCount = currentStaff.filter(s => s.is_available).length || 1;
-    const windowEnd = activeStaffCount * 2; // Chairs + On Deck
-    const clientsToAnalyze = currentQueue.slice(0, windowEnd);
+    const activeStaff = currentStaff.filter(s => s.is_available);
+    
+    // Analyze the queue strictly per available chair
+    for (const member of activeStaff) {
+      const memberQueue = currentQueue.filter(c => c.staff_id === member.id);
+      const clientsToAnalyze = memberQueue.slice(0, 2); // Top 2 per chair (1 in seat, 1 on deck)
 
-    for (const client of clientsToAnalyze) {
-      if (!client.alerted_at && !client.is_confirmed && client.whatsapp_number !== 'Sur place') {
-        await autoNotify(client);
+      for (const client of clientsToAnalyze) {
+        if (!client.alerted_at && !client.is_confirmed && client.whatsapp_number !== 'Sur place') {
+          await autoNotify(client);
+        }
       }
     }
   };
@@ -165,6 +197,7 @@ export default function Dashboard() {
       .from('queue')
       .select(`
         *, 
+        staff (name),
         customers(full_name, phone_number),
         queue_services (
           services (service_name, duration_minutes, price_dh)
@@ -200,7 +233,6 @@ export default function Dashboard() {
       setQueue(activeClients as Customer[]);
       setFrozenQueue(frozenClients as Customer[]);
       
-      // Update refs and trigger algorithms
       queueRef.current = activeClients as Customer[];
       if (activeClients.length > 0) {
         triggerSlidingWindow(activeClients as Customer[], staffRef.current);
@@ -216,6 +248,11 @@ export default function Dashboard() {
     if (stData) {
       setStaff(stData);
       staffRef.current = stData;
+      // Default the walk-in modal to the first available staff member
+      const active = stData.filter(s => s.is_available);
+      if (active.length > 0 && !selectedStaffId) {
+        setSelectedStaffId(active[0].id);
+      }
     }
   };
 
@@ -266,24 +303,26 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [barberId]);
 
-  // ✨ NEW: Service Image Upload Logic
   const handleServiceImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       if (!e.target.files || e.target.files.length === 0 || !barberId) return;
       setUploadingServiceImage(true);
-      const toastId = toast.loading("Téléchargement de l'image...", { style: { borderRadius: '12px' } });
+      const toastId = toast.loading("Compression et téléchargement...", { style: { borderRadius: '12px' } });
       
       const file = e.target.files[0];
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${barberId}-service-${Date.now()}.${fileExt}`;
+      const webpBlob = await convertToWebP(file, 0.8);
+      const fileName = `${barberId}-service-${Date.now()}.webp`;
 
-      const { error: uploadError } = await supabase.storage.from('service_images').upload(fileName, file);
+      const { error: uploadError } = await supabase.storage
+        .from('service_images')
+        .upload(fileName, webpBlob, { contentType: 'image/webp' });
+
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage.from('service_images').getPublicUrl(fileName);
       setNewServiceImageUrl(publicUrl);
 
-      toast.success("Image ajoutée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
+      toast.success("Image optimisée et ajoutée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
     } catch (error) {
       console.error(error);
       toast.error("Erreur de téléchargement.");
@@ -347,6 +386,10 @@ export default function Dashboard() {
     if (!error && data) {
       setStaff(prev => [...prev, data[0]]);
       staffRef.current = [...staffRef.current, data[0]];
+      
+      // Auto-select if it's the first staff
+      if (!selectedStaffId) setSelectedStaffId(data[0].id);
+
       setNewStaffName('');
       toast.success("Membre ajouté !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
     } else {
@@ -361,7 +404,16 @@ export default function Dashboard() {
       const updated = staff.map(s => s.id === id ? { ...s, is_available: !currentStatus } : s);
       setStaff(updated);
       staffRef.current = updated;
-      if (barberId) fetchQueueOnly(barberId); // Retrigger sliding window
+      
+      // Update walk-in selection safely
+      const active = updated.filter(s => s.is_available);
+      if (active.length > 0 && selectedStaffId === id && currentStatus) {
+        setSelectedStaffId(active[0].id); // Reassign if we just disabled the currently selected
+      } else if (active.length > 0 && !selectedStaffId) {
+        setSelectedStaffId(active[0].id);
+      }
+
+      if (barberId) fetchQueueOnly(barberId); 
     }
   };
 
@@ -374,6 +426,11 @@ export default function Dashboard() {
       const updated = staff.filter(s => s.id !== id);
       setStaff(updated);
       staffRef.current = updated;
+      
+      const active = updated.filter(s => s.is_available);
+      if (active.length > 0) setSelectedStaffId(active[0].id);
+      else setSelectedStaffId('');
+
       toast.success("Membre supprimé !", { style: { borderRadius: '12px', background: '#333', color: '#fff' }});
     }
   };
@@ -404,13 +461,16 @@ export default function Dashboard() {
     try {
       if (!e.target.files || e.target.files.length === 0 || !barberId) return;
       setUploadingImage(true);
-      const toastId = toast.loading("Téléchargement de la photo...", { style: { borderRadius: '12px' } });
+      const toastId = toast.loading("Compression et téléchargement...", { style: { borderRadius: '12px' } });
       
       const file = e.target.files[0];
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${barberId}-${Date.now()}.${fileExt}`;
+      const webpBlob = await convertToWebP(file, 0.8);
+      const fileName = `${barberId}-${Date.now()}.webp`;
 
-      const { error: uploadError } = await supabase.storage.from('barber_profiles').upload(fileName, file);
+      const { error: uploadError } = await supabase.storage
+        .from('barber_profiles')
+        .upload(fileName, webpBlob, { contentType: 'image/webp' });
+        
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage.from('barber_profiles').getPublicUrl(fileName);
@@ -418,7 +478,7 @@ export default function Dashboard() {
       setProfileImage(publicUrl);
       await supabase.from('barbers').update({ profile_image_url: publicUrl }).eq('id', barberId);
 
-      toast.success("Photo ajoutée avec succès !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
+      toast.success("Photo de profil optimisée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
     } catch (error) {
       console.error(error);
       toast.error("Erreur de téléchargement.");
@@ -555,6 +615,7 @@ export default function Dashboard() {
 
     const { data, error } = await supabase.from('queue').insert([{
       barber_id: barberId,
+      staff_id: selectedStaffId || null, // ✨ Assign to specific chair
       customer_name: walkInName,
       whatsapp_number: 'Sur place',
       status: 'waiting'
@@ -698,6 +759,9 @@ export default function Dashboard() {
     );
   }
 
+  const activeStaff = staff.filter(s => s.is_available);
+  const unassignedQueue = queue.filter(q => !q.staff_id);
+
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-amber-200">
       
@@ -741,19 +805,19 @@ export default function Dashboard() {
 
       <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-6 pb-28 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
 
-        {/* TAB 1: QUEUE */}
+        {/* TAB 1: PER-CHAIR QUEUE */}
         {activeTab === 'queue' && (
           <div className="animate-in fade-in duration-300">
             <div className="flex justify-between items-end mb-4 px-2">
               <div>
                 <h2 className="text-2xl font-black text-slate-900 tracking-tight">File d'attente</h2>
-                <p className="text-sm font-bold text-amber-600 mt-0.5">{queue.length} personne(s) en attente</p>
+                <p className="text-sm font-bold text-amber-600 mt-0.5">{queue.length} personne(s) au total</p>
               </div>
             </div>
 
             <button 
               onClick={() => setShowWalkInModal(true)}
-              className="w-full h-12 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-xl flex items-center justify-center gap-2 mb-6 shadow-md transition-transform active:scale-[0.98]"
+              className="w-full h-12 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-xl flex items-center justify-center gap-2 mb-8 shadow-md transition-transform active:scale-[0.98]"
             >
               <UserPlus className="w-4 h-4 text-amber-400" /> Ajouter Sur Place
             </button>
@@ -764,157 +828,211 @@ export default function Dashboard() {
                   <div key={i} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm animate-pulse h-32 w-full"></div>
                 ))}
               </div>
-            ) : queue.length === 0 ? (
-              <div className="bg-white p-10 rounded-[2rem] shadow-sm border border-slate-100 text-center">
-                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Coffee className="w-6 h-6 text-slate-300" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-900 mb-1">La file est vide</h3>
-                <p className="text-sm text-slate-500 font-medium">En attente de clients...</p>
-              </div>
             ) : (
-              <div className="space-y-3">
-                {queue.map((customer, index) => {
-                  const isAlerted = !!customer.alerted_at;
-                  const isConfirmed = customer.is_confirmed;
-                  const displayName = customer.customers?.full_name || customer.customer_name;
-                  const displayPhone = customer.customers?.phone_number || customer.whatsapp_number;
-                  const timeRemaining = timers[customer.id] || 0;
-
-                  if (index === 0) {
+              <>
+                {/* ✨ PER-CHAIR RENDER LOOP */}
+                {activeStaff.length === 0 ? (
+                  <div className="bg-red-50 text-red-500 p-6 rounded-3xl font-bold text-center mb-6 border border-red-100">
+                    <UserX className="w-8 h-8 mx-auto mb-2 text-red-400" />
+                    Aucun coiffeur n'est actuellement disponible.<br/>Activez un membre de l'équipe dans les paramètres.
+                  </div>
+                ) : (
+                  activeStaff.map(member => {
+                    const memberQueue = queue.filter(q => q.staff_id === member.id);
+                    
                     return (
-                      <div key={customer.id} className="p-5 rounded-3xl bg-slate-900 text-white shadow-lg border border-slate-800 relative overflow-hidden transition-all">
-                        <div className="absolute -right-8 -bottom-8 opacity-[0.05] pointer-events-none">
-                          <Scissors className="w-40 h-40" />
-                        </div>
+                      <div key={member.id} className="mb-8 bg-white border border-slate-100 rounded-[2rem] p-4 shadow-sm">
                         
-                        <div className="flex justify-between items-start relative z-10">
+                        <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-3">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/20">
-                              <Scissors className="w-5 h-5 text-slate-900 animate-pulse" />
+                            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                              <User className="w-5 h-5" />
                             </div>
                             <div>
-                              <span className="text-amber-400 font-bold text-[10px] uppercase tracking-widest block">Sur le fauteuil</span>
-                              <h3 className="text-lg font-black text-white capitalize leading-tight">{displayName}</h3>
-                              <div className="flex items-center gap-1 mt-0.5">
-                                {displayPhone === 'Sur place' ? (
-                                  <span className="bg-white/10 text-slate-300 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider">Sur Place</span>
-                                ) : (
-                                  <span className="text-slate-400 font-mono text-xs">{displayPhone}</span>
-                                )}
-                              </div>
+                              <h3 className="text-lg font-black text-slate-900 leading-tight">Fauteuil: {member.name}</h3>
+                              <p className="text-xs font-bold text-slate-400">{memberQueue.length} en attente</p>
                             </div>
                           </div>
                         </div>
 
-                        {customer.queue_services && customer.queue_services.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-3 relative z-10">
-                            {customer.queue_services.map((qs, i) => qs.services && (
-                              <span key={i} className="bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider">
-                                {qs.services.service_name}
-                              </span>
-                            ))}
+                        {memberQueue.length === 0 ? (
+                          <div className="py-6 text-center text-slate-400 text-sm font-medium">
+                            Fauteuil libre
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {memberQueue.map((customer, index) => {
+                              const isAlerted = !!customer.alerted_at;
+                              const isConfirmed = customer.is_confirmed;
+                              const displayName = customer.customers?.full_name || customer.customer_name;
+                              const displayPhone = customer.customers?.phone_number || customer.whatsapp_number;
+                              const timeRemaining = timers[customer.id] || 0;
+
+                              // CARD #1: IN CHAIR
+                              if (index === 0) {
+                                return (
+                                  <div key={customer.id} className="p-5 rounded-[1.5rem] bg-slate-900 text-white shadow-lg border border-slate-800 relative overflow-hidden transition-all">
+                                    <div className="absolute -right-8 -bottom-8 opacity-[0.05] pointer-events-none">
+                                      <Scissors className="w-40 h-40" />
+                                    </div>
+                                    <div className="flex justify-between items-start relative z-10">
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/20">
+                                          <Scissors className="w-5 h-5 text-slate-900 animate-pulse" />
+                                        </div>
+                                        <div>
+                                          <span className="text-amber-400 font-bold text-[10px] uppercase tracking-widest block">Sur le fauteuil</span>
+                                          <h3 className="text-lg font-black text-white capitalize leading-tight">{displayName}</h3>
+                                          <div className="flex items-center gap-1 mt-0.5">
+                                            {displayPhone === 'Sur place' ? (
+                                              <span className="bg-white/10 text-slate-300 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider">Sur Place</span>
+                                            ) : (
+                                              <span className="text-slate-400 font-mono text-xs">{displayPhone}</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {customer.queue_services && customer.queue_services.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mt-3 relative z-10">
+                                        {customer.queue_services.map((qs, i) => qs.services && (
+                                          <span key={i} className="bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                                            {qs.services.service_name}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    <div className="flex gap-2 w-full mt-4 relative z-10">
+                                      <button onClick={() => handleComplete(customer.id)} className="flex-1 h-12 bg-emerald-500 hover:bg-emerald-400 text-white font-black rounded-xl transition-all active:scale-[0.98] text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20">
+                                        <Check className="w-4 h-4" /> Terminer 
+                                      </button>
+                                      <button onClick={() => handleFreeze(customer.id)} className="w-12 h-12 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center shrink-0 border border-white/10">
+                                        <UserX className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              // CARD #2+: WAITING
+                              return (
+                                <div 
+                                  key={customer.id} 
+                                  className={`p-4 rounded-[1.5rem] shadow-sm flex flex-col gap-3 transition-all ${
+                                    isConfirmed 
+                                      ? 'bg-emerald-50/40 border border-emerald-400 shadow-emerald-500/10' 
+                                      : isAlerted 
+                                        ? 'bg-orange-50/40 border border-orange-300 shadow-orange-500/10' 
+                                        : 'bg-slate-50 border border-slate-100'
+                                  }`}
+                                >
+                                  <div className="flex justify-between items-start">
+                                    <div className="flex gap-3">
+                                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                                        isConfirmed ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : isAlerted ? 'bg-orange-100 border-orange-200 text-orange-700' : 'bg-slate-200 border-slate-300 text-slate-600'
+                                      }`}>
+                                        <span className="font-black text-sm">#{index + 1}</span>
+                                      </div>
+                                      <div>
+                                        <h3 className="text-base font-black text-slate-900 capitalize leading-tight">{displayName}</h3>
+                                        <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                          {displayPhone === 'Sur place' ? (
+                                            <span className="bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider">Sur Place</span>
+                                          ) : (
+                                            <span className="text-slate-500 font-mono text-[11px]">{displayPhone}</span>
+                                          )}
+                                          
+                                          {isConfirmed && (
+                                            <span className="flex items-center text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">
+                                              <CheckCircle2 className="w-2.5 h-2.5 mr-0.5" /> En route
+                                            </span>
+                                          )}
+                                          {isAlerted && !isConfirmed && (
+                                            <span className="flex items-center text-[9px] font-bold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-full animate-pulse">
+                                              <Timer className="w-2.5 h-2.5 mr-0.5" /> Attente
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        {(customer.queue_services?.length ?? 0) > 0 && (
+                                          <div className="flex flex-wrap items-center gap-1 mt-2">
+                                            {customer.queue_services?.map((qs, i) => qs.services && (
+                                              <span key={i} className="bg-white border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider">
+                                                {qs.services.service_name}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-2 mt-1">
+                                    {displayPhone !== 'Sur place' && !isConfirmed && (
+                                      <div className="col-span-2">
+                                        {isAlerted ? (
+                                          <button disabled className={`w-full h-10 font-black rounded-xl text-xs flex items-center justify-center gap-2 ${timeRemaining > 0 ? 'bg-orange-500 text-white' : 'bg-red-500 text-white'}`}>
+                                            <Timer className="w-4 h-4" /> {timeRemaining > 0 ? formatTime(timeRemaining) : "Relégation auto..."}
+                                          </button>
+                                        ) : (
+                                          <button 
+                                            onClick={() => handleNotify(customer)} 
+                                            disabled={isSendingAuth === customer.id} 
+                                            className="w-full h-10 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl active:scale-[0.98] disabled:opacity-50 text-xs"
+                                          >
+                                            {isSendingAuth === customer.id ? (
+                                              <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                            ) : (
+                                              <><Bell className="w-3.5 h-3.5 text-amber-400" /> Alerter (App)</>
+                                            )}
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
+                                    
+                                    <button onClick={() => handleComplete(customer.id)} className="h-10 flex items-center justify-center gap-1.5 font-bold rounded-xl active:scale-[0.98] text-xs bg-emerald-50 text-emerald-600 border border-emerald-100">
+                                      <Check className="w-3.5 h-3.5" /> Terminé
+                                    </button>
+                                    <button onClick={() => handleFreeze(customer.id)} className="h-10 flex items-center justify-center gap-1.5 bg-blue-50 text-blue-600 font-bold rounded-xl active:scale-[0.98] text-xs border border-blue-100">
+                                      <Snowflake className="w-3.5 h-3.5" /> Pause
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
-
-                        <div className="flex gap-2 w-full mt-4 relative z-10">
-                          <button onClick={() => handleComplete(customer.id)} className="flex-1 h-12 bg-emerald-500 hover:bg-emerald-400 text-white font-black rounded-xl transition-all active:scale-[0.98] text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20">
-                            <Check className="w-4 h-4" /> Terminer 
-                          </button>
-                          <button onClick={() => handleFreeze(customer.id)} className="w-12 h-12 bg-white/10 hover:bg-white/20 text-slate-300 rounded-xl transition-all active:scale-[0.98] flex items-center justify-center shrink-0 border border-white/10">
-                            <UserX className="w-4 h-4" />
-                          </button>
-                        </div>
                       </div>
                     );
-                  }
+                  })
+                )}
 
-                  return (
-                    <div 
-                      key={customer.id} 
-                      className={`p-4 rounded-3xl shadow-sm flex flex-col gap-3 transition-all ${
-                        isConfirmed 
-                          ? 'bg-emerald-50/40 border border-emerald-400 shadow-emerald-500/10' 
-                          : isAlerted 
-                            ? 'bg-orange-50/40 border border-orange-300 shadow-orange-500/10' 
-                            : 'bg-white border border-slate-100'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex gap-3">
-                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
-                            isConfirmed ? 'bg-emerald-100 border-emerald-200 text-emerald-700' : isAlerted ? 'bg-orange-100 border-orange-200 text-orange-700' : 'bg-slate-100 border-slate-200 text-slate-600'
-                          }`}>
-                            <span className="font-black text-sm">#{index + 1}</span>
-                          </div>
-                          <div>
-                            <h3 className="text-base font-black text-slate-900 capitalize leading-tight">{displayName}</h3>
-                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                              {displayPhone === 'Sur place' ? (
-                                <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider">Sur Place</span>
-                              ) : (
-                                <span className="text-slate-500 font-mono text-[11px]">{displayPhone}</span>
-                              )}
-                              
-                              {isConfirmed && (
-                                <span className="flex items-center text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">
-                                  <CheckCircle2 className="w-2.5 h-2.5 mr-0.5" /> En route
-                                </span>
-                              )}
-                              {isAlerted && !isConfirmed && (
-                                <span className="flex items-center text-[9px] font-bold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-full animate-pulse">
-                                  <Timer className="w-2.5 h-2.5 mr-0.5" /> Attente
-                                </span>
-                              )}
-                            </div>
-
-                            {(customer.queue_services?.length ?? 0) > 0 && (
-                              <div className="flex flex-wrap items-center gap-1 mt-2">
-                                {customer.queue_services?.map((qs, i) => qs.services && (
-                                  <span key={i} className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider">
-                                    {qs.services.service_name}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                {/* LEGACY OR UNASSIGNED CLIENTS */}
+                {unassignedQueue.length > 0 && (
+                  <div className="mb-8 bg-slate-100 border border-slate-200 rounded-[2rem] p-4 shadow-inner">
+                    <div className="flex items-center gap-3 mb-4 pb-3">
+                      <div className="w-10 h-10 bg-slate-200 text-slate-500 rounded-xl flex items-center justify-center">
+                        <User className="w-5 h-5" />
                       </div>
-
-                      <div className="grid grid-cols-2 gap-2 mt-1">
-                        {displayPhone !== 'Sur place' && !isConfirmed && (
-                          <div className="col-span-2">
-                            {isAlerted ? (
-                              <button disabled className={`w-full h-10 font-black rounded-xl text-xs flex items-center justify-center gap-2 ${timeRemaining > 0 ? 'bg-orange-500 text-white' : 'bg-red-500 text-white'}`}>
-                                <Timer className="w-4 h-4" /> {timeRemaining > 0 ? formatTime(timeRemaining) : "Relégation auto..."}
-                              </button>
-                            ) : (
-                              <button 
-                                onClick={() => handleNotify(customer)} 
-                                disabled={isSendingAuth === customer.id} 
-                                className="w-full h-10 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl active:scale-[0.98] disabled:opacity-50 text-xs"
-                              >
-                                {isSendingAuth === customer.id ? (
-                                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                ) : (
-                                  <><Bell className="w-3.5 h-3.5 text-amber-400" /> Alerter (App)</>
-                                )}
-                              </button>
-                            )}
-                          </div>
-                        )}
-                        
-                        <button onClick={() => handleComplete(customer.id)} className="h-10 flex items-center justify-center gap-1.5 font-bold rounded-xl active:scale-[0.98] text-xs bg-emerald-50 text-emerald-600 border border-emerald-100">
-                          <Check className="w-3.5 h-3.5" /> Terminé
-                        </button>
-                        <button onClick={() => handleFreeze(customer.id)} className="h-10 flex items-center justify-center gap-1.5 bg-blue-50 text-blue-600 font-bold rounded-xl active:scale-[0.98] text-xs border border-blue-100">
-                          <Snowflake className="w-3.5 h-3.5" /> Pause
-                        </button>
+                      <div>
+                        <h3 className="text-lg font-black text-slate-900 leading-tight">File Globale</h3>
+                        <p className="text-xs font-bold text-slate-500">Clients sans fauteuil assigné</p>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                    {/* Render basic unassigned list */}
+                    <div className="space-y-3">
+                      {unassignedQueue.map(customer => (
+                         <div key={customer.id} className="bg-white p-3 rounded-2xl flex justify-between items-center shadow-sm">
+                            <span className="font-bold">{customer.customers?.full_name || customer.customer_name}</span>
+                            <button onClick={() => handleComplete(customer.id)} className="px-3 py-1.5 bg-slate-900 text-white text-xs font-bold rounded-lg">Terminer</button>
+                         </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
             {frozenQueue.length > 0 && (
@@ -945,7 +1063,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ✨ NEW: TAB 2 - MODULAR SETTINGS UI */}
+        {/* TAB 2 - MODULAR SETTINGS UI */}
         {activeTab === 'settings' && (
           <div className="animate-in fade-in slide-in-from-right-4 duration-300">
             <h2 className="text-2xl font-black text-slate-900 mb-6 tracking-tight flex items-center gap-2 px-2">
@@ -998,7 +1116,6 @@ export default function Dashboard() {
               
               <form onSubmit={handleAddService} className="grid grid-cols-2 gap-3 mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-4">
                 <div className="col-span-2 flex gap-3">
-                  {/* ✨ NEW: Image Upload for Services */}
                   <div className="w-12 h-12 bg-white rounded-xl border border-slate-200 flex items-center justify-center relative overflow-hidden shrink-0 shadow-sm">
                     <input type="file" accept="image/*" onChange={handleServiceImageUpload} disabled={uploadingServiceImage} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                     {newServiceImageUrl ? (
@@ -1073,7 +1190,7 @@ export default function Dashboard() {
                     <div>
                       <p className="font-bold text-slate-900 text-sm">{member.name}</p>
                       <p className={`text-[10px] font-black uppercase tracking-wider ${member.is_available ? 'text-emerald-500' : 'text-slate-400'}`}>
-                        {member.is_available ? 'Disponible' : 'Absent'}
+                        {member.is_available ? 'Disponible' : 'Absent (Fauteuil désactivé)'}
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -1124,7 +1241,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* WALK IN MODAL */}
+        {/* ✨ UPDATED WALK IN MODAL (CHAIR ASSIGNMENT) */}
         {showWalkInModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 sm:p-8 shadow-2xl relative animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
@@ -1138,11 +1255,27 @@ export default function Dashboard() {
               <p className="text-slate-500 font-medium text-sm mb-6">Ajoutez rapidement une personne au salon.</p>
               
               <form onSubmit={handleAddWalkIn}>
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all mb-6">
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Prénom du client</label>
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1 transition-all mb-4">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Prénom du client</label>
                   <input type="text" autoFocus required value={walkInName} onChange={(e) => setWalkInName(e.target.value)} className="w-full bg-transparent border-none p-0 text-lg font-bold text-slate-900 placeholder-slate-300 focus:ring-0 outline-none" placeholder="Ex: Karim" />
                 </div>
-                <button type="submit" disabled={isAddingWalkIn || !walkInName.trim()} className="w-full h-14 bg-amber-500 active:bg-amber-400 text-slate-900 font-black rounded-2xl transition-all shadow-[0_10px_20px_-10px_rgba(245,158,11,0.5)] disabled:opacity-50 text-lg flex items-center justify-center gap-2">
+
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 focus-within:border-slate-900 focus-within:ring-1 transition-all mb-6">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Coiffeur (Fauteuil)</label>
+                  <select 
+                    value={selectedStaffId} 
+                    onChange={(e) => setSelectedStaffId(e.target.value)} 
+                    className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-900 focus:ring-0 outline-none"
+                    required
+                  >
+                    {staff.filter(s => s.is_available).length === 0 && <option value="" disabled>Aucun coiffeur dispo</option>}
+                    {staff.filter(s => s.is_available).map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <button type="submit" disabled={isAddingWalkIn || !walkInName.trim() || !selectedStaffId} className="w-full h-14 bg-amber-500 active:bg-amber-400 text-slate-900 font-black rounded-2xl transition-all shadow-[0_10px_20px_-10px_rgba(245,158,11,0.5)] disabled:opacity-50 text-lg flex items-center justify-center gap-2">
                   {isAddingWalkIn ? 'Ajout...' : 'Ajouter à la file'}
                 </button>
               </form>
@@ -1152,7 +1285,6 @@ export default function Dashboard() {
 
       </div>
 
-      {/* BOTTOM NAVIGATION BAR */}
       <div className="fixed bottom-0 left-0 right-0 h-20 bg-white border-t border-slate-200 flex items-center justify-around z-40 px-6 pb-2">
         <button 
           onClick={() => setActiveTab('queue')} 
