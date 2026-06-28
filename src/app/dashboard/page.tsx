@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
-import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Briefcase, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon } from 'lucide-react';
+import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Briefcase, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon, KeyRound } from 'lucide-react';
 
 type Customer = {
   id: string;
@@ -102,7 +102,9 @@ export default function Dashboard() {
   const [uploadingServiceImage, setUploadingServiceImage] = useState(false);
   const [isAddingService, setIsAddingService] = useState(false);
 
+  // ✨ NEW: Staff PIN State
   const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffPin, setNewStaffPin] = useState('');
   const [isAddingStaff, setIsAddingStaff] = useState(false);
 
   const [location, setLocation] = useState('');
@@ -300,7 +302,6 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [barberId]);
 
-  // ✨ FIX: Aggressive Error Handling for Service Images
   const handleServiceImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       if (!e.target.files || e.target.files.length === 0 || !barberId) return;
@@ -329,7 +330,7 @@ export default function Dashboard() {
       toast.error(`Échec: ${error.message}`, { duration: 5000 });
     } finally {
       setUploadingServiceImage(false);
-      if (e.target) e.target.value = ''; // Reset input so they can try the same file again
+      if (e.target) e.target.value = ''; 
     }
   };
 
@@ -372,9 +373,15 @@ export default function Dashboard() {
     }
   };
 
+  // ✨ FIX: Add PIN mapping logic to Staff Creation
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStaffName || !barberId) return;
+    if (!newStaffName || !newStaffPin || !barberId) return;
+
+    if (newStaffPin.length !== 4 || !/^\d+$/.test(newStaffPin)) {
+      toast.error("Le code PIN doit contenir exactement 4 chiffres.");
+      return;
+    }
     
     setIsAddingStaff(true);
     const toastId = toast.loading("Ajout en cours...", { style: { borderRadius: '12px' }});
@@ -382,6 +389,7 @@ export default function Dashboard() {
     const { data, error } = await supabase.from('staff').insert([{
       barber_id: barberId,
       name: newStaffName,
+      access_pin: newStaffPin,
       is_available: true
     }]).select();
 
@@ -392,6 +400,7 @@ export default function Dashboard() {
       if (!selectedStaffId) setSelectedStaffId(data[0].id);
 
       setNewStaffName('');
+      setNewStaffPin('');
       toast.success("Membre ajouté !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
     } else {
       toast.error("Erreur d'ajout.", { id: toastId });
@@ -457,7 +466,6 @@ export default function Dashboard() {
     setIsOnboarding(false);
   };
 
-  // ✨ FIX: Aggressive Error Handling for Profile Images
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       if (!e.target.files || e.target.files.length === 0 || !barberId) return;
@@ -652,6 +660,7 @@ export default function Dashboard() {
   const shopSlug = ownerName ? ownerName.toLowerCase().replace(/\s+/g, '-') : 'salon';
   const shareLink = origin && barberId ? `${origin}/q/${barberId}` : '';
   const qrCodeUrl = shareLink ? `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(shareLink)}&color=0f172a&bgcolor=ffffff` : '';
+  const staffPortalLink = origin && barberId ? `${origin}/staff/${barberId}` : ''; // ✨ NEW: Portal Link
 
   const downloadQR = async () => {
     const toastId = toast.loading("Création de l'affiche...", { style: { borderRadius: '12px' }});
@@ -841,7 +850,6 @@ export default function Dashboard() {
                     Aucun coiffeur n'est actuellement disponible.<br/>Activez un membre de l'équipe dans les paramètres.
                   </div>
                 ) : (
-                  // ✨ FIX 1: CSS Grid added here
                   <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                     {activeStaff.map(member => {
                       const memberQueue = queue.filter(q => q.staff_id === member.id);
@@ -1174,19 +1182,22 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* CARD 3: L'ÉQUIPE */}
+            {/* CARD 3: L'ÉQUIPE (NOW WITH PIN) */}
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
               <div className="flex items-center gap-2 mb-4">
                 <User className="w-5 h-5 text-emerald-500" />
-                <h4 className="text-lg font-black text-slate-900">L'Équipe</h4>
+                <h4 className="text-lg font-black text-slate-900">L'Équipe & Accès Staff</h4>
               </div>
               
-              <form onSubmit={handleAddStaff} className="flex gap-3 mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-3">
+              <form onSubmit={handleAddStaff} className="flex flex-col sm:flex-row gap-3 mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-3">
                 <div className="flex-1">
                   <input type="text" required value={newStaffName} onChange={(e)=>setNewStaffName(e.target.value)} placeholder="Prénom du coiffeur" className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-sm font-bold text-slate-900 outline-none" />
                 </div>
-                <button type="submit" disabled={isAddingStaff} className="h-10 px-4 bg-slate-900 text-white font-bold rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 shrink-0">
-                  <Plus className="w-4 h-4 text-emerald-400" />
+                <div className="w-full sm:w-32">
+                  <input type="text" maxLength={4} pattern="\d{4}" required value={newStaffPin} onChange={(e)=>setNewStaffPin(e.target.value.replace(/\D/g, ''))} placeholder="PIN (4 chiffres)" className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-sm font-bold text-slate-900 outline-none text-center tracking-widest" />
+                </div>
+                <button type="submit" disabled={isAddingStaff} className="h-10 px-4 bg-slate-900 text-white font-bold rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 shrink-0 w-full sm:w-auto">
+                  <Plus className="w-4 h-4 text-emerald-400" /> Ajouter
                 </button>
               </form>
 
@@ -1195,9 +1206,15 @@ export default function Dashboard() {
                   <div key={member.id} className="bg-slate-50 border border-slate-100 p-3 rounded-2xl flex items-center justify-between shadow-sm">
                     <div>
                       <p className="font-bold text-slate-900 text-sm">{member.name}</p>
-                      <p className={`text-[10px] font-black uppercase tracking-wider ${member.is_available ? 'text-emerald-500' : 'text-slate-400'}`}>
-                        {member.is_available ? 'Disponible' : 'Absent (Fauteuil désactivé)'}
-                      </p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className={`text-[10px] font-black uppercase tracking-wider ${member.is_available ? 'text-emerald-500' : 'text-slate-400'}`}>
+                          {member.is_available ? 'Disponible' : 'Désactivé'}
+                        </p>
+                        <span className="text-slate-300">•</span>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                          <KeyRound className="w-3 h-3" /> PIN: <span className="font-black text-slate-700">{member.access_pin || '----'}</span>
+                        </p>
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => handleToggleStaffAvailability(member.id, member.is_available)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${member.is_available ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
@@ -1210,6 +1227,17 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
+
+              {/* ✨ NEW: Portal Link Section */}
+              {staffPortalLink && (
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Lien Portail Staff</h5>
+                  <button onClick={() => copyToClipboard(staffPortalLink)} className="w-full h-10 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-all flex items-center justify-center gap-2 border border-slate-200 text-xs">
+                    {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                    {copied ? 'Lien Copié !' : 'Copier le lien pour l\'iPad / Employés'}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* CARD 4: MARKETING & DATA */}
@@ -1234,7 +1262,7 @@ export default function Dashboard() {
                   </button>
                   <button onClick={() => copyToClipboard(shareLink)} className="w-full h-12 bg-white/10 active:bg-white/20 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-white/10">
                     {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-amber-400" />}
-                    {copied ? 'Lien Copié !' : 'Copier le lien direct'}
+                    {copied ? 'Lien Copié !' : 'Copier le lien direct client'}
                   </button>
 
                   <Link href="/analytics" className="w-full h-12 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm mt-3">
