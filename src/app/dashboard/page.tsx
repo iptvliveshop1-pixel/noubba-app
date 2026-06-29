@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
-import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Briefcase, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon, KeyRound } from 'lucide-react';
+import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Briefcase, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon, KeyRound, Circle } from 'lucide-react';
 
 type Customer = {
   id: string;
@@ -87,9 +87,11 @@ export default function Dashboard() {
   const [isOpen, setIsOpen] = useState<boolean>(true);
   const [isToggling, setIsToggling] = useState(false);
 
+  // Walk In State
   const [showWalkInModal, setShowWalkInModal] = useState(false);
   const [walkInName, setWalkInName] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<string>(''); 
+  const [selectedWalkInServices, setSelectedWalkInServices] = useState<string[]>([]); // ✨ Added Service State
   const [isAddingWalkIn, setIsAddingWalkIn] = useState(false);
 
   const [services, setServices] = useState<any[]>([]);
@@ -102,7 +104,6 @@ export default function Dashboard() {
   const [uploadingServiceImage, setUploadingServiceImage] = useState(false);
   const [isAddingService, setIsAddingService] = useState(false);
 
-  // ✨ NEW: Staff PIN State
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffPin, setNewStaffPin] = useState('');
   const [isAddingStaff, setIsAddingStaff] = useState(false);
@@ -220,7 +221,9 @@ export default function Dashboard() {
 
         if (customer.alerted_at && !customer.is_confirmed && !timers[customer.id]) {
           const elapsed = Math.floor((new Date().getTime() - new Date(customer.alerted_at).getTime()) / 1000);
-          const remaining = Math.max(0, 600 - elapsed); 
+          // ✨ FIX: Timer Clamp applied to Manager Dashboard
+          let remaining = 600 - elapsed;
+          remaining = Math.max(0, Math.min(600, remaining)); 
           setTimers(prev => ({ ...prev, [customer.id]: remaining }));
         }
       });
@@ -317,7 +320,6 @@ export default function Dashboard() {
         .upload(fileName, webpBlob, { contentType: 'image/webp' });
 
       if (uploadError) {
-        console.error("Supabase Storage Error Details:", uploadError);
         throw new Error(uploadError.message || "Erreur de permissions (RLS) ou de bucket.");
       }
 
@@ -326,7 +328,6 @@ export default function Dashboard() {
 
       toast.success("Image optimisée et ajoutée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
     } catch (error: any) {
-      console.error("Upload Catch Block Error:", error);
       toast.error(`Échec: ${error.message}`, { duration: 5000 });
     } finally {
       setUploadingServiceImage(false);
@@ -373,7 +374,6 @@ export default function Dashboard() {
     }
   };
 
-  // ✨ FIX: Add PIN mapping logic to Staff Creation
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStaffName || !newStaffPin || !barberId) return;
@@ -421,7 +421,6 @@ export default function Dashboard() {
       } else if (active.length > 0 && !selectedStaffId) {
         setSelectedStaffId(active[0].id);
       }
-
       if (barberId) fetchQueueOnly(barberId); 
     }
   };
@@ -481,7 +480,6 @@ export default function Dashboard() {
         .upload(fileName, webpBlob, { contentType: 'image/webp' });
         
       if (uploadError) {
-        console.error("Supabase Storage Error Details:", uploadError);
         throw new Error(uploadError.message || "Erreur de permissions (RLS) ou de bucket.");
       }
 
@@ -492,7 +490,6 @@ export default function Dashboard() {
 
       toast.success("Photo de profil optimisée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
     } catch (error: any) {
-      console.error("Upload Catch Block Error:", error);
       toast.error(`Échec: ${error.message}`, { duration: 5000 });
     } finally {
       setUploadingImage(false);
@@ -562,10 +559,12 @@ export default function Dashboard() {
     }
   };
 
+  // ✨ FIX: Collision Fix updated here for the Manager
   const handleUnfreeze = async (customerId: string) => {
     const toastId = toast.loading("Réactivation...", { style: { borderRadius: '12px' }});
     const { error } = await supabase.from('queue').update({ 
       status: 'waiting',
+      joined_at: new Date().toISOString(), 
       frozen_at: null
     }).eq('id', customerId);
 
@@ -619,28 +618,44 @@ export default function Dashboard() {
     }
   };
 
+  // ✨ FIX: Service Selection for Manager's Walk-in Modal
+  const toggleWalkInService = (serviceId: string) => {
+    setSelectedWalkInServices(prev => prev.includes(serviceId) ? prev.filter(id => id !== serviceId) : [...prev, serviceId]);
+  };
+
   const handleAddWalkIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!walkInName.trim() || !barberId) return;
+    if (!walkInName.trim() || !barberId || !selectedStaffId) return;
     
     setIsAddingWalkIn(true);
     const toastId = toast.loading("Ajout en cours...", { style: { borderRadius: '12px' }});
 
-    const { data, error } = await supabase.from('queue').insert([{
+    const totalTime = selectedWalkInServices.reduce((total, id) => {
+      const s = services.find(srv => srv.id === id);
+      return total + (s?.duration_minutes || 0);
+    }, 0);
+
+    const { data: newTicket, error } = await supabase.from('queue').insert([{
       barber_id: barberId,
-      staff_id: selectedStaffId || null,
+      staff_id: selectedStaffId,
       customer_name: walkInName,
       whatsapp_number: 'Sur place',
-      status: 'waiting'
-    }]).select(`*, customers(full_name, phone_number), queue_services(services(service_name, duration_minutes, price_dh))`);
+      status: 'waiting',
+      total_estimated_time: totalTime > 0 ? totalTime : null
+    }]).select().single();
 
     if (error) {
       toast.error("Erreur d'ajout.", { id: toastId });
-    } else if (data) {
-      setQueue(prev => [...prev, data[0] as Customer]);
+    } else if (newTicket) {
+      if (selectedWalkInServices.length > 0) {
+        const serviceInserts = selectedWalkInServices.map(sId => ({ queue_id: newTicket.id, service_id: sId }));
+        await supabase.from('queue_services').insert(serviceInserts);
+      }
       toast.success("Client ajouté !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
       setShowWalkInModal(false);
       setWalkInName('');
+      setSelectedWalkInServices([]);
+      fetchQueueOnly(barberId);
     }
     setIsAddingWalkIn(false);
   };
@@ -660,7 +675,7 @@ export default function Dashboard() {
   const shopSlug = ownerName ? ownerName.toLowerCase().replace(/\s+/g, '-') : 'salon';
   const shareLink = origin && barberId ? `${origin}/q/${barberId}` : '';
   const qrCodeUrl = shareLink ? `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(shareLink)}&color=0f172a&bgcolor=ffffff` : '';
-  const staffPortalLink = origin && barberId ? `${origin}/staff/${barberId}` : ''; // ✨ NEW: Portal Link
+  const staffPortalLink = origin && barberId ? `${origin}/staff/${barberId}` : '';
 
   const downloadQR = async () => {
     const toastId = toast.loading("Création de l'affiche...", { style: { borderRadius: '12px' }});
@@ -779,7 +794,6 @@ export default function Dashboard() {
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-amber-200">
       
-      {/* HEADER SECTION */}
       <div className="min-h-[25vh] pt-12 pb-8 w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black"></div>
         
@@ -819,7 +833,6 @@ export default function Dashboard() {
 
       <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-6 pb-28 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
 
-        {/* TAB 1: PER-CHAIR QUEUE */}
         {activeTab === 'queue' && (
           <div className="animate-in fade-in duration-300">
             <div className="flex justify-between items-end mb-4 px-2">
@@ -882,7 +895,6 @@ export default function Dashboard() {
                                 const displayPhone = customer.customers?.phone_number || customer.whatsapp_number;
                                 const timeRemaining = timers[customer.id] || 0;
 
-                                // CARD #1: IN CHAIR
                                 if (index === 0) {
                                   return (
                                     <div key={customer.id} className="p-5 rounded-[1.5rem] bg-slate-900 text-white shadow-lg border border-slate-800 relative overflow-hidden transition-all">
@@ -930,7 +942,6 @@ export default function Dashboard() {
                                   );
                                 }
 
-                                // CARD #2+: WAITING
                                 return (
                                   <div 
                                     key={customer.id} 
@@ -1024,7 +1035,6 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                {/* LEGACY OR UNASSIGNED CLIENTS */}
                 {unassignedQueue.length > 0 && (
                   <div className="mt-8 mb-8 bg-slate-100 border border-slate-200 rounded-[2rem] p-4 shadow-inner">
                     <div className="flex items-center gap-3 mb-4 pb-3">
@@ -1077,14 +1087,12 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* TAB 2 - MODULAR SETTINGS UI */}
         {activeTab === 'settings' && (
           <div className="animate-in fade-in slide-in-from-right-4 duration-300">
             <h2 className="text-2xl font-black text-slate-900 mb-6 tracking-tight flex items-center gap-2 px-2">
               <Settings className="w-6 h-6 text-slate-400" /> Paramètres
             </h2>
 
-            {/* CARD 1: IDENTITÉ DU SALON */}
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
               <div className="flex items-center gap-2 mb-4">
                 <Store className="w-5 h-5 text-blue-500" />
@@ -1121,7 +1129,6 @@ export default function Dashboard() {
               </form>
             </div>
 
-            {/* CARD 2: CARTE DES PRESTATIONS */}
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
               <div className="flex items-center gap-2 mb-4">
                 <Scissors className="w-5 h-5 text-amber-500" />
@@ -1182,7 +1189,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* CARD 3: L'ÉQUIPE (NOW WITH PIN) */}
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
               <div className="flex items-center gap-2 mb-4">
                 <User className="w-5 h-5 text-emerald-500" />
@@ -1228,7 +1234,6 @@ export default function Dashboard() {
                 ))}
               </div>
 
-              {/* ✨ NEW: Portal Link Section */}
               {staffPortalLink && (
                 <div className="mt-4 pt-4 border-t border-slate-100">
                   <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Lien Portail Staff</h5>
@@ -1240,7 +1245,6 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* CARD 4: MARKETING & DATA */}
             {!isLoading && shareLink && (
               <div className="bg-slate-900 p-6 rounded-3xl shadow-xl relative overflow-hidden group mb-6">
                 <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
@@ -1275,7 +1279,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* WALK IN MODAL (CHAIR ASSIGNMENT) */}
+        {/* ✨ FIX: Upgraded Walk In Modal with Services for Manager */}
         {showWalkInModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 sm:p-8 shadow-2xl relative animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
@@ -1308,6 +1312,26 @@ export default function Dashboard() {
                     ))}
                   </select>
                 </div>
+
+                {services.length > 0 && (
+                  <div className="mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 px-1">Prestations (Optionnel)</label>
+                    <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                      {services.map(service => {
+                        const isSelected = selectedWalkInServices.includes(service.id);
+                        return (
+                          <button type="button" key={service.id} onClick={() => toggleWalkInService(service.id)} className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left ${isSelected ? 'border-slate-900 bg-white shadow-sm' : 'border-slate-200 hover:border-slate-300 bg-transparent'}`}>
+                            <div>
+                              <h4 className={`font-bold text-sm ${isSelected ? 'text-slate-900' : 'text-slate-700'}`}>{service.service_name}</h4>
+                              <p className="text-slate-400 text-xs">{service.duration_minutes} min • {service.price_dh} DH</p>
+                            </div>
+                            {isSelected ? <CheckCircle2 className="w-5 h-5 text-slate-900" /> : <Circle className="w-5 h-5 text-slate-300" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 <button type="submit" disabled={isAddingWalkIn || !walkInName.trim() || !selectedStaffId} className="w-full h-14 bg-amber-500 active:bg-amber-400 text-slate-900 font-black rounded-2xl transition-all shadow-[0_10px_20px_-10px_rgba(245,158,11,0.5)] disabled:opacity-50 text-lg flex items-center justify-center gap-2">
                   {isAddingWalkIn ? 'Ajout...' : 'Ajouter à la file'}

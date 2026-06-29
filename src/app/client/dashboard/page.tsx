@@ -393,16 +393,31 @@ export default function ClientDashboard() {
     setIsCanceling(false);
   };
 
+  // ✨ FIX: Bulletproof parsing logic for @yudiel/react-qr-scanner ^2.6.0
   const handleScanSuccess = async (result: any) => {
-    if (result && result.length > 0) {
-      const url = result[0].rawValue;
-      if (url.includes('/q/')) {
-        setShowScanner(false);
-        const toastId = toast.loading("Salon trouvé ! Ouverture...");
-        await subscribeToPush(); 
-        window.location.href = url;
-      } else {
-        toast.error("Ce QR Code n'est pas valide pour Noubba.");
+    if (!result) return;
+    
+    let url = '';
+    
+    if (Array.isArray(result) && result.length > 0) {
+      url = result[0]?.rawValue || (typeof result[0] === 'string' ? result[0] : '');
+    } else if (typeof result === 'object' && result !== null && result.rawValue) {
+      url = result.rawValue;
+    } else if (typeof result === 'string') {
+      url = result;
+    }
+
+    if (!url) return;
+
+    if (url.includes('/q/')) {
+      setShowScanner(false);
+      const toastId = toast.loading("Salon trouvé ! Ouverture...");
+      await subscribeToPush(); 
+      window.location.href = url;
+    } else {
+      // Prevents spamming toasts if the camera catches a random barcode (like a product wrapper)
+      if (url.trim().length > 0 && url.includes('http')) {
+        toast.error("Ce QR Code n'est pas valide pour Noubba.", { id: 'qr-error' });
       }
     }
   };
