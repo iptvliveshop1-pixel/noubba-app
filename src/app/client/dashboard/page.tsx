@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { LogOut, Scissors, MapPin, Timer, CheckCircle2, AlertCircle, X, Navigation, Store, QrCode, Camera, Clock, Star, Award, User } from 'lucide-react';
+import { LogOut, Scissors, MapPin, Timer, CheckCircle2, AlertCircle, X, Navigation, Store, QrCode, Camera, Clock, Star, Award, User, Snowflake } from 'lucide-react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -62,7 +62,7 @@ export default function ClientDashboard() {
     const { data: customer } = await supabase.from('customers').select('*').eq('id', session.user.id).single();
     if (customer) setCustomerName(customer.full_name);
 
-    // ✨ 1. Fetch Queue AND the assigned Staff Member
+    // ✨ FIX: Now fetches both 'waiting' AND 'frozen' tickets
     const { data: queueDataArray, error: queueError } = await supabase
       .from('queue')
       .select(`
@@ -73,7 +73,7 @@ export default function ClientDashboard() {
         )
       `)
       .eq('customer_id', session.user.id)
-      .eq('status', 'waiting')
+      .in('status', ['waiting', 'frozen'])
       .order('joined_at', { ascending: false })
       .limit(1);
 
@@ -92,7 +92,6 @@ export default function ClientDashboard() {
         
       setActiveQueue({ ...queueData, barbers: barberData || { shop_name: 'Salon' } });
       
-      // ✨ 2. Calculate Position strictly for THIS specific Barber Chair
       let positionQuery = supabase
         .from('queue')
         .select('id')
@@ -100,7 +99,6 @@ export default function ClientDashboard() {
         .eq('status', 'waiting')
         .lt('joined_at', queueData.joined_at);
 
-      // If they selected a specific chair, only count people waiting for that chair
       if (queueData.staff_id) {
         positionQuery = positionQuery.eq('staff_id', queueData.staff_id);
       }
@@ -109,7 +107,7 @@ export default function ClientDashboard() {
 
       const currentPos = (aheadTickets?.length || 0) + 1;
       
-      if (prevPosition.current > 0 && currentPos < prevPosition.current) {
+      if (prevPosition.current > 0 && currentPos < prevPosition.current && queueData.status !== 'frozen') {
         toast.success("La file avance ! C'est bientôt à vous.", { 
           icon: '🚀', 
           style: { borderRadius: '12px', background: '#2563eb', color: '#fff' } 
@@ -119,7 +117,7 @@ export default function ClientDashboard() {
       setPosition(currentPos);
       prevPosition.current = currentPos;
 
-      if (queueData.alerted_at && !queueData.is_confirmed) {
+      if (queueData.alerted_at && !queueData.is_confirmed && queueData.status !== 'frozen') {
         if (!hasPlayedAlertSound.current && soundEnabled && audioRef.current) {
           audioRef.current.play().catch(e => console.error("Audio blocked by browser:", e));
           hasPlayedAlertSound.current = true; 
@@ -189,7 +187,7 @@ export default function ClientDashboard() {
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (activeQueue?.alerted_at && !activeQueue.is_confirmed) {
+    if (activeQueue?.alerted_at && !activeQueue.is_confirmed && activeQueue.status !== 'frozen') {
       interval = setInterval(() => {
         const elapsed = Math.floor((new Date().getTime() - new Date(activeQueue.alerted_at).getTime()) / 1000);
         const remaining = Math.max(0, 600 - elapsed);
@@ -332,7 +330,6 @@ export default function ClientDashboard() {
     setIsDelaying(true);
     const toastId = toast.loading("Mise à jour de votre place...", { style: { borderRadius: '12px' } });
 
-    // ✨ Delay logic updated to strictly look at their assigned chair line
     let delayQuery = supabase
       .from('queue')
       .select('joined_at')
@@ -393,7 +390,6 @@ export default function ClientDashboard() {
     setIsCanceling(false);
   };
 
-  // ✨ FIX: Bulletproof parsing logic for @yudiel/react-qr-scanner ^2.6.0
   const handleScanSuccess = async (result: any) => {
     if (!result) return;
     
@@ -415,7 +411,6 @@ export default function ClientDashboard() {
       await subscribeToPush(); 
       window.location.href = url;
     } else {
-      // Prevents spamming toasts if the camera catches a random barcode (like a product wrapper)
       if (url.trim().length > 0 && url.includes('http')) {
         toast.error("Ce QR Code n'est pas valide pour Noubba.", { id: 'qr-error' });
       }
@@ -584,6 +579,26 @@ export default function ClientDashboard() {
               </button>
             </div>
           </>
+        ) : activeQueue.status === 'frozen' ? (
+          // ✨ NEW: Dedicated Frozen Status UI
+          <div className="rounded-[2rem] p-1 shadow-lg transition-colors duration-500 bg-gradient-to-b from-blue-400 to-blue-600 shadow-blue-500/20">
+            <div className="bg-white rounded-[1.8rem] p-8 relative overflow-hidden text-center">
+              <div className="w-20 h-20 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-5 shadow-inner">
+                <Snowflake className="w-10 h-10" />
+              </div>
+              <h2 className="text-2xl font-black text-slate-900 mb-2">Place en pause</h2>
+              <p className="text-slate-500 font-medium text-sm mb-8">
+                Votre place a été mise en pause par le coiffeur. Présentez-vous au salon pour la réactiver.
+              </p>
+              <button 
+                onClick={handleCancelTicket}
+                disabled={isCanceling}
+                className="w-full h-14 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <X className="w-5 h-5" /> Quitter la file
+              </button>
+            </div>
+          </div>
         ) : (
           <div className={`rounded-[2rem] p-1 shadow-lg transition-colors duration-500 ${
             activeQueue.alerted_at && !activeQueue.is_confirmed 
@@ -606,7 +621,6 @@ export default function ClientDashboard() {
 
               <div className="text-center border-b border-slate-100 pb-6 mb-6">
                 
-                {/* ✨ NEW: BARBER CHAIR ASSIGNMENT BADGE */}
                 {activeQueue.staff?.name && (
                   <div className="bg-blue-50 text-blue-700 border border-blue-100 font-bold px-4 py-2 rounded-xl mb-4 inline-flex items-center gap-2 shadow-sm animate-in fade-in">
                     <User className="w-4 h-4 text-blue-500" /> 
