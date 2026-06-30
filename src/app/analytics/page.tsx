@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, TrendingUp, Users, DollarSign, Clock, BarChart3, Scissors, Wallet } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Users, DollarSign, BarChart3, Scissors, Wallet, User } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AnalyticsDashboard() {
@@ -14,6 +14,9 @@ export default function AnalyticsDashboard() {
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [averageBasket, setAverageBasket] = useState(0);
   const [popularServices, setPopularServices] = useState<{name: string, count: number, revenue: number}[]>([]);
+  
+  // ✨ NEW: Staff Performance State
+  const [staffPerformance, setStaffPerformance] = useState<{name: string, clients: number, revenue: number}[]>([]);
 
   const router = useRouter();
 
@@ -33,7 +36,7 @@ export default function AnalyticsDashboard() {
         .single();
 
       if (!barber) {
-        router.push('/barber/dashboard');
+        router.push('/dashboard');
         return;
       }
       setShopName(barber.shop_name);
@@ -43,11 +46,12 @@ export default function AnalyticsDashboard() {
       startOfDay.setHours(0, 0, 0, 0);
       const isoStart = startOfDay.toISOString();
 
-      // 3. Deep query to get today's completed tickets and their specific services
+      // ✨ FIX: Added staff(name) to the query to track individual performance
       const { data: completedTickets, error } = await supabase
         .from('queue')
         .select(`
           id,
+          staff (name),
           queue_services (
             services (service_name, price_dh)
           )
@@ -67,15 +71,19 @@ export default function AnalyticsDashboard() {
 
         let revenueCount = 0;
         const serviceStats: Record<string, { count: number, revenue: number }> = {};
+        const staffStats: Record<string, { clients: number, revenue: number }> = {};
 
         // Crunch the numbers
         completedTickets.forEach(ticket => {
+          let ticketRevenue = 0;
+
           if (ticket.queue_services) {
             ticket.queue_services.forEach((qs: any) => {
               if (qs.services) {
                 const price = qs.services.price_dh || 0;
                 const name = qs.services.service_name;
                 
+                ticketRevenue += price;
                 revenueCount += price;
 
                 // Track popular services
@@ -87,6 +95,14 @@ export default function AnalyticsDashboard() {
               }
             });
           }
+
+          // ✨ NEW: Track Individual Staff Performance
+          const staffName = (ticket.staff as any)?.name || 'Non assigné';
+          if (!staffStats[staffName]) {
+            staffStats[staffName] = { clients: 0, revenue: 0 };
+          }
+          staffStats[staffName].clients += 1;
+          staffStats[staffName].revenue += ticketRevenue;
         });
 
         setTotalRevenue(revenueCount);
@@ -102,6 +118,17 @@ export default function AnalyticsDashboard() {
           .sort((a, b) => b.count - a.count);
 
         setPopularServices(sortedServices);
+
+        // ✨ NEW: Convert staff stats into an array and sort by highest revenue
+        const sortedStaff = Object.keys(staffStats)
+          .map(key => ({
+            name: key,
+            clients: staffStats[key].clients,
+            revenue: staffStats[key].revenue
+          }))
+          .sort((a, b) => b.revenue - a.revenue);
+
+        setStaffPerformance(sortedStaff);
       }
 
       setIsLoading(false);
@@ -176,6 +203,39 @@ export default function AnalyticsDashboard() {
             <div className="w-12 h-12 bg-amber-500 text-slate-900 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/20 relative z-10">
               <TrendingUp className="w-6 h-6" />
             </div>
+          </div>
+        </div>
+
+        {/* ✨ NEW: TEAM PERFORMANCE LEDGER */}
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden mb-6">
+          <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
+            <div className="w-8 h-8 bg-white border border-slate-200 rounded-lg flex items-center justify-center shadow-sm">
+              <User className="w-4 h-4 text-blue-600" />
+            </div>
+            <h3 className="font-black text-slate-900">Performances de l'équipe</h3>
+          </div>
+          
+          <div className="p-3">
+            {staffPerformance.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-slate-400 font-bold text-sm">Aucun coiffeur n'a terminé de coupe aujourd'hui.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {staffPerformance.map((staff, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 hover:bg-slate-50 rounded-xl transition-colors border border-transparent hover:border-slate-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-blue-50 text-blue-600 font-black text-xs rounded-lg flex items-center justify-center border border-blue-100">
+                        {staff.clients}
+                        <Users className="w-3 h-3 ml-0.5 opacity-50" />
+                      </div>
+                      <span className="font-bold text-slate-700 capitalize">{staff.name}</span>
+                    </div>
+                    <span className="font-black text-emerald-600">{staff.revenue} <span className="text-xs text-emerald-600/70 font-bold">DH</span></span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

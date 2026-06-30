@@ -30,7 +30,6 @@ export default function ClientLogin() {
     }
 
     if (authData.user) {
-      // ✨ FIX: Stop auto-booking and redirect to barber profile
       const pendingBarberId = localStorage.getItem('pending_booking_barber_id');
       
       if (pendingBarberId) {
@@ -76,10 +75,19 @@ export default function ClientLogin() {
               {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
+
+          {/* ✨ FIX: Mot de passe oublié link added here */}
+          <div className="flex justify-end mt-1">
+            <Link href="/reset-password" className="text-sm font-bold text-slate-400 hover:text-blue-600 transition-colors">
+              Mot de passe oublié ?
+            </Link>
+          </div>
+
           <button type="submit" disabled={isLoading} className="w-full h-14 mt-6 bg-blue-600 text-white font-black rounded-2xl text-lg flex items-center justify-center gap-2">
             {isLoading ? "Chargement..." : "Se connecter"}
           </button>
         </form>
+        
         <div className="mt-8 text-center">
           <p className="text-slate-500 font-medium text-sm">
             Nouveau client ?{' '}

@@ -120,7 +120,6 @@ export default function Dashboard() {
   const confirmedIds = useRef<Set<string>>(new Set());
   const router = useRouter();
 
-  // ✨ FIX 1: 3-Strike Penalty System
   const handleAutoPenalty = async (customer: Customer) => {
     const strikes = customer.delay_count || 0;
 
@@ -545,7 +544,6 @@ export default function Dashboard() {
     }
   };
 
-  // ✨ FIX 2: Collision Fix
   const handleUnfreeze = async (customerId: string) => {
     const toastId = toast.loading("Réactivation...", { style: { borderRadius: '12px' }});
     const { error } = await supabase.from('queue').update({ 
@@ -602,7 +600,6 @@ export default function Dashboard() {
     }
   };
 
-  // ✨ FIX 3: Walk In Services and Placement Bug Fix
   const toggleWalkInService = (serviceId: string) => {
     setSelectedWalkInServices(prev => prev.includes(serviceId) ? prev.filter(id => id !== serviceId) : [...prev, serviceId]);
   };
@@ -619,7 +616,6 @@ export default function Dashboard() {
       return total + (s?.duration_minutes || 0);
     }, 0);
 
-    // Ensure walk-ins go absolutely to the bottom
     let newJoinedAt = new Date().toISOString();
     const specificQueue = queueRef.current.filter(c => c.staff_id === selectedStaffId);
     if (specificQueue.length > 0) {
@@ -1013,7 +1009,6 @@ export default function Dashboard() {
                                         </div>
                                       )}
                                       
-                                      {/* ✨ FIX 4: "Retirer" instead of "Terminé" for waiting clients */}
                                       <button onClick={() => handleHardCancel(customer.id)} className="h-10 flex items-center justify-center gap-1.5 font-bold rounded-xl active:scale-[0.98] text-xs bg-red-50 text-red-600 border border-red-100 hover:bg-red-100 transition-colors">
                                         <X className="w-3.5 h-3.5" /> Retirer
                                       </button>
@@ -1266,10 +1261,6 @@ export default function Dashboard() {
                     {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-amber-400" />}
                     {copied ? 'Lien Copié !' : 'Copier le lien direct client'}
                   </button>
-
-                  <Link href="/analytics" className="w-full h-12 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm mt-3">
-                    <BarChart3 className="w-4 h-4 text-blue-500" /> Voir les statistiques du jour
-                  </Link>
                 </div>
               </div>
             )}
@@ -1277,9 +1268,10 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* ✨ FIX: Increased pb-12 so the button clears the bottom navigation */}
         {showWalkInModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 sm:p-8 shadow-2xl relative animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 sm:p-8 pb-12 sm:pb-12 shadow-2xl relative animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
               <button onClick={() => setShowWalkInModal(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-700 bg-slate-100 p-2 rounded-full transition-colors">
                 <X className="w-5 h-5" />
               </button>
@@ -1340,20 +1332,30 @@ export default function Dashboard() {
 
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 h-20 bg-white border-t border-slate-200 flex items-center justify-around z-40 px-6 pb-2">
+      {/* ✨ FIX: Redesigned, slimmer bottom navigation bar */}
+      <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-200 flex items-center justify-around z-40 px-2 pb-safe">
         <button 
           onClick={() => setActiveTab('queue')} 
-          className={`flex flex-col items-center justify-center w-24 transition-colors ${activeTab === 'queue' ? 'text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+          className={`flex flex-col items-center justify-center w-20 transition-colors ${activeTab === 'queue' ? 'text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
         >
-          <LayoutList className="w-6 h-6" />
-          <span className="text-[10px] font-black mt-1 uppercase tracking-wider">File</span>
+          <LayoutList className="w-5 h-5" />
+          <span className="text-[9px] font-black mt-1 uppercase tracking-wider">File</span>
         </button>
+        
+        <Link 
+          href="/analytics" 
+          className="flex flex-col items-center justify-center w-20 transition-colors text-slate-400 hover:text-slate-600"
+        >
+          <BarChart3 className="w-5 h-5" />
+          <span className="text-[9px] font-black mt-1 uppercase tracking-wider">Stats</span>
+        </Link>
+
         <button 
           onClick={() => setActiveTab('settings')} 
-          className={`flex flex-col items-center justify-center w-24 transition-colors ${activeTab === 'settings' ? 'text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+          className={`flex flex-col items-center justify-center w-20 transition-colors ${activeTab === 'settings' ? 'text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
         >
-          <Settings className="w-6 h-6" />
-          <span className="text-[10px] font-black mt-1 uppercase tracking-wider">Paramètres</span>
+          <Settings className="w-5 h-5" />
+          <span className="text-[9px] font-black mt-1 uppercase tracking-wider">Réglages</span>
         </button>
       </div>
 
