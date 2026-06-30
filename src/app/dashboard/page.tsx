@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
-import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Briefcase, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon, KeyRound, Circle } from 'lucide-react';
+import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon, KeyRound, Circle, Loader2 } from 'lucide-react';
 
 type Customer = {
   id: string;
@@ -15,6 +15,7 @@ type Customer = {
   is_confirmed?: boolean;
   status?: string; 
   frozen_at?: string; 
+  joined_at?: string;
   delay_count?: number;
   total_estimated_time?: number | null;
   staff_id?: string; 
@@ -87,11 +88,10 @@ export default function Dashboard() {
   const [isOpen, setIsOpen] = useState<boolean>(true);
   const [isToggling, setIsToggling] = useState(false);
 
-  // Walk In State
   const [showWalkInModal, setShowWalkInModal] = useState(false);
   const [walkInName, setWalkInName] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<string>(''); 
-  const [selectedWalkInServices, setSelectedWalkInServices] = useState<string[]>([]); // ✨ Added Service State
+  const [selectedWalkInServices, setSelectedWalkInServices] = useState<string[]>([]);
   const [isAddingWalkIn, setIsAddingWalkIn] = useState(false);
 
   const [services, setServices] = useState<any[]>([]);
@@ -120,17 +120,32 @@ export default function Dashboard() {
   const confirmedIds = useRef<Set<string>>(new Set());
   const router = useRouter();
 
+  // ✨ FIX 1: 3-Strike Penalty System
   const handleAutoPenalty = async (customer: Customer) => {
-    const newJoinedAt = new Date(new Date().getTime() + 15 * 60000).toISOString();
+    const strikes = customer.delay_count || 0;
+
+    if (strikes >= 2) {
+      await supabase.from('queue').update({ status: 'cancelled' }).eq('id', customer.id);
+      toast.error(`${customer.customer_name} a ignoré 3 alertes. Retiré de la file !`);
+    } else if (strikes === 1) {
+      await supabase.from('queue').update({
+        joined_at: new Date().toISOString(),
+        alerted_at: null,
+        is_confirmed: false,
+        delay_count: 2
+      }).eq('id', customer.id);
+      toast.error(`${customer.customer_name} relégué à la fin de la file !`);
+    } else {
+      const newJoinedAt = new Date(new Date().getTime() + 15 * 60000).toISOString();
+      await supabase.from('queue').update({
+        joined_at: newJoinedAt,
+        alerted_at: null,
+        is_confirmed: false,
+        delay_count: 1
+      }).eq('id', customer.id);
+      toast.error(`${customer.customer_name} est en retard. Place reculée.`);
+    }
     
-    await supabase.from('queue').update({
-      joined_at: newJoinedAt,
-      alerted_at: null,
-      is_confirmed: false,
-      delay_count: (customer.delay_count || 0) + 1
-    }).eq('id', customer.id);
-  
-    toast.error(`${customer.customer_name} est en retard. Relégué !`, { style: { borderRadius: '12px', background: '#ef4444', color: '#fff' }});
     if (barberId) fetchQueueOnly(barberId);
   };
 
@@ -221,7 +236,6 @@ export default function Dashboard() {
 
         if (customer.alerted_at && !customer.is_confirmed && !timers[customer.id]) {
           const elapsed = Math.floor((new Date().getTime() - new Date(customer.alerted_at).getTime()) / 1000);
-          // ✨ FIX: Timer Clamp applied to Manager Dashboard
           let remaining = 600 - elapsed;
           remaining = Math.max(0, Math.min(600, remaining)); 
           setTimers(prev => ({ ...prev, [customer.id]: remaining }));
@@ -230,7 +244,7 @@ export default function Dashboard() {
 
       if (shouldPlaySound) {
         const audio = new Audio('/ding.mp3');
-        audio.play().catch(e => console.log("Audio blocked by browser:", e));
+        audio.play().catch(e => console.log("Audio blocked"));
       }
 
       setQueue(activeClients as Customer[]);
@@ -309,24 +323,20 @@ export default function Dashboard() {
     try {
       if (!e.target.files || e.target.files.length === 0 || !barberId) return;
       setUploadingServiceImage(true);
-      const toastId = toast.loading("Compression et téléchargement...", { style: { borderRadius: '12px' } });
+      const toastId = toast.loading("Compression...", { style: { borderRadius: '12px' } });
       
       const file = e.target.files[0];
       const webpBlob = await convertToWebP(file, 0.8);
       const fileName = `${barberId}-service-${Date.now()}.webp`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('service_images')
-        .upload(fileName, webpBlob, { contentType: 'image/webp' });
+      const { error: uploadError } = await supabase.storage.from('service_images').upload(fileName, webpBlob, { contentType: 'image/webp' });
 
-      if (uploadError) {
-        throw new Error(uploadError.message || "Erreur de permissions (RLS) ou de bucket.");
-      }
+      if (uploadError) throw new Error(uploadError.message);
 
       const { data: { publicUrl } } = supabase.storage.from('service_images').getPublicUrl(fileName);
       setNewServiceImageUrl(publicUrl);
 
-      toast.success("Image optimisée et ajoutée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
+      toast.success("Image ajoutée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
     } catch (error: any) {
       toast.error(`Échec: ${error.message}`, { duration: 5000 });
     } finally {
@@ -366,11 +376,10 @@ export default function Dashboard() {
   const handleDeleteService = async (id: string) => {
     const confirm = window.confirm("Supprimer cette prestation ?");
     if (!confirm) return;
-
     const { error } = await supabase.from('services').delete().eq('id', id);
     if (!error) {
       setServices(prev => prev.filter(s => s.id !== id));
-      toast.success("Prestation supprimée !", { style: { borderRadius: '12px', background: '#333', color: '#fff' }});
+      toast.success("Prestation supprimée !");
     }
   };
 
@@ -396,9 +405,7 @@ export default function Dashboard() {
     if (!error && data) {
       setStaff(prev => [...prev, data[0]]);
       staffRef.current = [...staffRef.current, data[0]];
-      
       if (!selectedStaffId) setSelectedStaffId(data[0].id);
-
       setNewStaffName('');
       setNewStaffPin('');
       toast.success("Membre ajouté !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
@@ -428,18 +435,15 @@ export default function Dashboard() {
   const handleDeleteStaff = async (id: string) => {
     const confirm = window.confirm("Supprimer ce membre de l'équipe ?");
     if (!confirm) return;
-
     const { error } = await supabase.from('staff').delete().eq('id', id);
     if (!error) {
       const updated = staff.filter(s => s.id !== id);
       setStaff(updated);
       staffRef.current = updated;
-      
       const active = updated.filter(s => s.is_available);
       if (active.length > 0) setSelectedStaffId(active[0].id);
       else setSelectedStaffId('');
-
-      toast.success("Membre supprimé !", { style: { borderRadius: '12px', background: '#333', color: '#fff' }});
+      toast.success("Membre supprimé !");
     }
   };
 
@@ -469,26 +473,21 @@ export default function Dashboard() {
     try {
       if (!e.target.files || e.target.files.length === 0 || !barberId) return;
       setUploadingImage(true);
-      const toastId = toast.loading("Compression et téléchargement...", { style: { borderRadius: '12px' } });
+      const toastId = toast.loading("Compression...", { style: { borderRadius: '12px' } });
       
       const file = e.target.files[0];
       const webpBlob = await convertToWebP(file, 0.8);
       const fileName = `${barberId}-${Date.now()}.webp`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('barber_profiles')
-        .upload(fileName, webpBlob, { contentType: 'image/webp' });
-        
-      if (uploadError) {
-        throw new Error(uploadError.message || "Erreur de permissions (RLS) ou de bucket.");
-      }
+      const { error: uploadError } = await supabase.storage.from('barber_profiles').upload(fileName, webpBlob, { contentType: 'image/webp' });
+      if (uploadError) throw new Error(uploadError.message);
 
       const { data: { publicUrl } } = supabase.storage.from('barber_profiles').getPublicUrl(fileName);
 
       setProfileImage(publicUrl);
       await supabase.from('barbers').update({ profile_image_url: publicUrl }).eq('id', barberId);
 
-      toast.success("Photo de profil optimisée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
+      toast.success("Photo optimisée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
     } catch (error: any) {
       toast.error(`Échec: ${error.message}`, { duration: 5000 });
     } finally {
@@ -501,15 +500,11 @@ export default function Dashboard() {
     e.preventDefault();
     if (!barberId) return;
     setIsSavingProfile(true);
-    const toastId = toast.loading("Mise à jour du lien...", { style: { borderRadius: '12px' }});
+    const toastId = toast.loading("Mise à jour...", { style: { borderRadius: '12px' }});
 
     const { error } = await supabase.from('barbers').update({ location: location }).eq('id', barberId);
-
-    if (!error) {
-      toast.success("Lien mis à jour !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
-    } else {
-      toast.error("Erreur de mise à jour.", { id: toastId });
-    }
+    if (!error) toast.success("Mise à jour réussie !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
+    else toast.error("Erreur.", { id: toastId });
     setIsSavingProfile(false);
   };
 
@@ -521,13 +516,8 @@ export default function Dashboard() {
 
     if (!error) {
       setIsOpen(newStatus);
-      if (newStatus) {
-        toast.success("Le salon est ouvert !", { icon: '🟢', style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
-      } else {
-        toast("Le salon est fermé !", { icon: '🔴', style: { borderRadius: '12px', background: '#334155', color: '#fff' }});
-      }
-    } else {
-      toast.error("Erreur lors du changement de statut.");
+      if (newStatus) toast.success("Salon ouvert !", { icon: '🟢' });
+      else toast("Salon fermé !", { icon: '🔴' });
     }
     setIsToggling(false);
   };
@@ -536,9 +526,7 @@ export default function Dashboard() {
     const { error } = await supabase.from('queue').update({ status: 'completed' }).eq('id', customerId);
     if (!error) {
       if (barberId) fetchQueueOnly(barberId);
-      toast.success("Coupe terminée !", { icon: '✨', style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
-    } else {
-      toast.error("Erreur de mise à jour.");
+      toast.success("Coupe terminée !", { icon: '✨' });
     }
   };
 
@@ -553,13 +541,11 @@ export default function Dashboard() {
 
     if (!error) {
       if (barberId) fetchQueueOnly(barberId);
-      toast.success("Client mis en pause.", { id: toastId, icon: '❄️', style: { borderRadius: '12px', background: '#3b82f6', color: '#fff' }});
-    } else {
-      toast.error("Erreur.", { id: toastId });
+      toast.success("Client mis en pause.", { id: toastId, icon: '❄️' });
     }
   };
 
-  // ✨ FIX: Collision Fix updated here for the Manager
+  // ✨ FIX 2: Collision Fix
   const handleUnfreeze = async (customerId: string) => {
     const toastId = toast.loading("Réactivation...", { style: { borderRadius: '12px' }});
     const { error } = await supabase.from('queue').update({ 
@@ -570,26 +556,24 @@ export default function Dashboard() {
 
     if (!error) {
       if (barberId) fetchQueueOnly(barberId);
-      toast.success("Client réactivé !", { id: toastId, icon: '🔥', style: { borderRadius: '12px', background: '#f59e0b', color: '#fff' }});
-    } else {
-      toast.error("Erreur.", { id: toastId });
+      toast.success("Client réactivé !", { id: toastId, icon: '🔥' });
     }
   };
 
   const handleHardCancel = async (customerId: string) => {
-    const confirm = window.confirm("Supprimer définitivement ce client de la file ?");
+    const confirm = window.confirm("Retirer définitivement ce client de la file ?");
     if (!confirm) return;
 
     const { error } = await supabase.from('queue').update({ status: 'cancelled' }).eq('id', customerId);
     if (!error) {
       if (barberId) fetchQueueOnly(barberId);
-      toast("Client retiré.", { icon: '👋', style: { borderRadius: '12px', background: '#333', color: '#fff' }});
+      toast("Client retiré.", { icon: '👋' });
     }
   };
 
   const handleNotify = async (customer: Customer) => {
     setIsSendingAuth(customer.id);
-    const toastId = toast.loading("Alerte manuelle en cours...", { style: { borderRadius: '12px' }}); 
+    const toastId = toast.loading("Alerte...", { style: { borderRadius: '12px' }}); 
     try {
       const sendName = customer.customers?.full_name || customer.customer_name;
       const { error } = await supabase.from('queue').update({ alerted_at: new Date().toISOString() }).eq('id', customer.id);
@@ -604,12 +588,12 @@ export default function Dashboard() {
           body: JSON.stringify({
             customerId: customer.customer_id,
             title: "C'est bientôt à vous ! ✂️",
-            body: `Le salon ${shopName} vous attend. Cliquez ici pour confirmer !`
+            body: `Le salon ${shopName} vous attend.`
           })
-        }).catch(err => console.error("Push API failed:", err));
+        }).catch(err => console.error(err));
       }
 
-      toast.success(`Alerte envoyée à ${sendName.split(' ')[0]} !`, { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
+      toast.success(`Alerte envoyée à ${sendName.split(' ')[0]} !`, { id: toastId });
       if (barberId) fetchQueueOnly(barberId); 
     } catch (error) {
       toast.error("Erreur réseau.", { id: toastId });
@@ -618,7 +602,7 @@ export default function Dashboard() {
     }
   };
 
-  // ✨ FIX: Service Selection for Manager's Walk-in Modal
+  // ✨ FIX 3: Walk In Services and Placement Bug Fix
   const toggleWalkInService = (serviceId: string) => {
     setSelectedWalkInServices(prev => prev.includes(serviceId) ? prev.filter(id => id !== serviceId) : [...prev, serviceId]);
   };
@@ -635,13 +619,25 @@ export default function Dashboard() {
       return total + (s?.duration_minutes || 0);
     }, 0);
 
+    // Ensure walk-ins go absolutely to the bottom
+    let newJoinedAt = new Date().toISOString();
+    const specificQueue = queueRef.current.filter(c => c.staff_id === selectedStaffId);
+    if (specificQueue.length > 0) {
+      const maxTime = Math.max(...specificQueue.map(c => new Date(c.joined_at || new Date()).getTime()));
+      const nowTime = new Date().getTime();
+      if (maxTime > nowTime) {
+        newJoinedAt = new Date(maxTime + 1000).toISOString(); 
+      }
+    }
+
     const { data: newTicket, error } = await supabase.from('queue').insert([{
       barber_id: barberId,
       staff_id: selectedStaffId,
       customer_name: walkInName,
       whatsapp_number: 'Sur place',
       status: 'waiting',
-      total_estimated_time: totalTime > 0 ? totalTime : null
+      total_estimated_time: totalTime > 0 ? totalTime : null,
+      joined_at: newJoinedAt
     }]).select().single();
 
     if (error) {
@@ -651,7 +647,7 @@ export default function Dashboard() {
         const serviceInserts = selectedWalkInServices.map(sId => ({ queue_id: newTicket.id, service_id: sId }));
         await supabase.from('queue_services').insert(serviceInserts);
       }
-      toast.success("Client ajouté !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
+      toast.success("Client ajouté !", { id: toastId });
       setShowWalkInModal(false);
       setWalkInName('');
       setSelectedWalkInServices([]);
@@ -725,7 +721,7 @@ export default function Dashboard() {
         link.click();
         
         window.URL.revokeObjectURL(imgUrl);
-        toast.success("Affiche téléchargée !", { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' }});
+        toast.success("Affiche téléchargée !", { id: toastId });
       };
       img.src = imgUrl;
     } catch (error) {
@@ -1017,9 +1013,11 @@ export default function Dashboard() {
                                         </div>
                                       )}
                                       
-                                      <button onClick={() => handleComplete(customer.id)} className="h-10 flex items-center justify-center gap-1.5 font-bold rounded-xl active:scale-[0.98] text-xs bg-emerald-50 text-emerald-600 border border-emerald-100">
-                                        <Check className="w-3.5 h-3.5" /> Terminé
+                                      {/* ✨ FIX 4: "Retirer" instead of "Terminé" for waiting clients */}
+                                      <button onClick={() => handleHardCancel(customer.id)} className="h-10 flex items-center justify-center gap-1.5 font-bold rounded-xl active:scale-[0.98] text-xs bg-red-50 text-red-600 border border-red-100 hover:bg-red-100 transition-colors">
+                                        <X className="w-3.5 h-3.5" /> Retirer
                                       </button>
+
                                       <button onClick={() => handleFreeze(customer.id)} className="h-10 flex items-center justify-center gap-1.5 bg-blue-50 text-blue-600 font-bold rounded-xl active:scale-[0.98] text-xs border border-blue-100">
                                         <Snowflake className="w-3.5 h-3.5" /> Pause
                                       </button>
@@ -1075,7 +1073,7 @@ export default function Dashboard() {
                         <button onClick={() => handleUnfreeze(customer.id)} className="h-8 px-3 bg-blue-50 text-blue-600 font-bold rounded-lg text-xs transition-colors active:scale-95">
                           Réactiver
                         </button>
-                        <button onClick={() => handleHardCancel(customer.id)} className="h-8 w-8 flex items-center justify-center bg-red-50 text-red-500 rounded-lg active:scale-95">
+                        <button onClick={() => handleHardCancel(customer.id)} className="h-8 w-8 flex items-center justify-center bg-red-50 text-red-500 rounded-lg active:scale-95 transition-colors">
                           <X className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -1279,7 +1277,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ✨ FIX: Upgraded Walk In Modal with Services for Manager */}
         {showWalkInModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 sm:p-8 shadow-2xl relative animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
@@ -1334,7 +1331,7 @@ export default function Dashboard() {
                 )}
 
                 <button type="submit" disabled={isAddingWalkIn || !walkInName.trim() || !selectedStaffId} className="w-full h-14 bg-amber-500 active:bg-amber-400 text-slate-900 font-black rounded-2xl transition-all shadow-[0_10px_20px_-10px_rgba(245,158,11,0.5)] disabled:opacity-50 text-lg flex items-center justify-center gap-2">
-                  {isAddingWalkIn ? 'Ajout...' : 'Ajouter à la file'}
+                  {isAddingWalkIn ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Ajouter à la file'}
                 </button>
               </form>
             </div>

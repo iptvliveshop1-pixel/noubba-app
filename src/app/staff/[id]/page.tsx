@@ -17,6 +17,7 @@ type Customer = {
   is_confirmed?: boolean;
   status?: string;
   frozen_at?: string;
+  joined_at?: string; // Needed for the math calculations
   delay_count?: number;
   queue_services?: {
     services?: {
@@ -171,14 +172,34 @@ export default function StaffPortal() {
   const handleAutoPenalty = async (id: string) => {
     const target = queueRef.current.find(c => c.id === id);
     if (!target) return;
-    const newJoinedAt = new Date(new Date().getTime() + 15 * 60000).toISOString();
-    await supabase.from('queue').update({
-      joined_at: newJoinedAt,
-      alerted_at: null,
-      is_confirmed: false,
-      delay_count: (target.delay_count || 0) + 1
-    }).eq('id', id);
-    toast.error(`${target.customer_name} est en retard. Relégué !`);
+    
+    const strikes = target.delay_count || 0;
+
+    if (strikes >= 2) {
+      // Strike 3: Auto Cancel
+      await supabase.from('queue').update({ status: 'cancelled' }).eq('id', id);
+      toast.error(`${target.customer_name} a ignoré 3 alertes. Retiré de la file !`);
+    } else if (strikes === 1) {
+      // Strike 2: Bottom of the Queue (now)
+      await supabase.from('queue').update({
+        joined_at: new Date().toISOString(),
+        alerted_at: null,
+        is_confirmed: false,
+        delay_count: 2
+      }).eq('id', id);
+      toast.error(`${target.customer_name} relégué à la fin de la file !`);
+    } else {
+      // Strike 1: +15 minutes
+      const newJoinedAt = new Date(new Date().getTime() + 15 * 60000).toISOString();
+      await supabase.from('queue').update({
+        joined_at: newJoinedAt,
+        alerted_at: null,
+        is_confirmed: false,
+        delay_count: 1
+      }).eq('id', id);
+      toast.error(`${target.customer_name} est en retard. Place reculée.`);
+    }
+    
     fetchChairQueue();
   };
 
@@ -222,6 +243,15 @@ export default function StaffPortal() {
     toast.success('Client réactivé et placé en file !');
     fetchChairQueue();
   };
+  
+  // Clean manual cancellation
+  const handleHardCancel = async (customerId: string) => {
+    const confirm = window.confirm("Retirer définitivement ce client de la file ?");
+    if (!confirm) return;
+    await supabase.from('queue').update({ status: 'cancelled' }).eq('id', customerId);
+    toast("Client retiré.", { icon: '👋', style: { borderRadius: '12px', background: '#333', color: '#fff' }});
+    fetchChairQueue();
+  };
 
   const handleManualNotify = async (customer: Customer) => {
     setIsSendingAlert(customer.id);
@@ -260,13 +290,24 @@ export default function StaffPortal() {
       return total + (s?.duration_minutes || 0);
     }, 0);
 
+    // Ensure walk-ins go absolutely to the bottom, even past penalized clients
+    let newJoinedAt = new Date().toISOString();
+    if (queueRef.current.length > 0) {
+      const maxTime = Math.max(...queueRef.current.map(c => new Date(c.joined_at || new Date()).getTime()));
+      const nowTime = new Date().getTime();
+      if (maxTime > nowTime) {
+        newJoinedAt = new Date(maxTime + 1000).toISOString(); 
+      }
+    }
+
     const { data: newTicket, error } = await supabase.from('queue').insert([{
       barber_id: shopId,
       staff_id: authenticatedStaff.id,
       customer_name: walkInName,
       whatsapp_number: 'Sur place',
       status: 'waiting',
-      total_estimated_time: totalTime > 0 ? totalTime : null
+      total_estimated_time: totalTime > 0 ? totalTime : null,
+      joined_at: newJoinedAt
     }]).select().single();
 
     if (error) {
@@ -289,11 +330,9 @@ export default function StaffPortal() {
     setSelectedServices(prev => prev.includes(serviceId) ? prev.filter(id => id !== serviceId) : [...prev, serviceId]);
   };
 
-  // ✨ UPGRADED SCREEN 1: Premium Glassmorphism Profile Selection
   if (!selectedStaff) {
     return (
       <div className="min-h-[100dvh] bg-slate-950 flex flex-col justify-center px-6 py-12 relative overflow-hidden">
-        {/* Ambient Glows */}
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-amber-500/20 rounded-full blur-[100px] pointer-events-none"></div>
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-[100px] pointer-events-none"></div>
         
@@ -325,11 +364,9 @@ export default function StaffPortal() {
     );
   }
 
-  // ✨ UPGRADED SCREEN 2: Secure iOS-Style PIN Pad
   if (selectedStaff && !authenticatedStaff) {
     return (
       <div className="min-h-[100dvh] bg-slate-950 flex flex-col justify-between px-6 py-10 relative overflow-hidden">
-        {/* Ambient Glow */}
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-amber-500/10 rounded-full blur-[100px] pointer-events-none"></div>
 
         <div className="max-w-sm w-full mx-auto text-center pt-4 space-y-8 relative z-10">
@@ -374,7 +411,7 @@ export default function StaffPortal() {
                 {num}
               </button>
             ))}
-            <div className="w-[76px] h-[76px]" /> {/* Spacer */}
+            <div className="w-[76px] h-[76px]" />
             <button 
               onClick={() => handleKeyPress('0')} 
               disabled={isVerifying} 
@@ -395,7 +432,6 @@ export default function StaffPortal() {
     );
   }
 
-  // SCREEN 3: Core Functional Workspace Layout
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans">
       <div className="h-[25vh] w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden shrink-0">
@@ -482,7 +518,8 @@ export default function StaffPortal() {
                         )}
                       </div>
                     )}
-                    <button onClick={() => handleComplete(customer.id)} className="h-10 flex items-center justify-center gap-1.5 font-bold rounded-xl text-xs bg-emerald-50 text-emerald-600 border border-emerald-100/60"><Check className="w-3.5 h-3.5" /> Terminé</button>
+                    
+                    <button onClick={() => handleHardCancel(customer.id)} className="h-10 flex items-center justify-center gap-1.5 font-bold rounded-xl text-xs bg-red-50 text-red-600 border border-red-100/60 transition-colors hover:bg-red-100"><X className="w-3.5 h-3.5" /> Retirer</button>
                     <button onClick={() => handleFreeze(customer.id)} className="h-10 flex items-center justify-center gap-1.5 bg-blue-50 text-blue-600 font-bold rounded-xl text-xs border border-blue-100/60"><Snowflake className="w-3.5 h-3.5" /> Mettre Pause</button>
                   </div>
                 </div>
@@ -498,7 +535,10 @@ export default function StaffPortal() {
               {frozenQueue.map(customer => (
                 <div key={customer.id} className="bg-white p-3 rounded-2xl border border-blue-100 shadow-sm flex items-center justify-between">
                   <span className="font-bold text-sm text-slate-900 capitalize">{customer.customer_name}</span>
-                  <button onClick={() => handleUnfreeze(customer.id)} className="h-8 px-3 bg-blue-50 text-blue-600 font-bold rounded-lg text-xs transition-colors">Réactiver</button>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleUnfreeze(customer.id)} className="h-8 px-3 bg-blue-50 text-blue-600 font-bold rounded-lg text-xs transition-colors">Réactiver</button>
+                    <button onClick={() => handleHardCancel(customer.id)} className="h-8 w-8 flex items-center justify-center bg-red-50 text-red-500 font-bold rounded-lg transition-colors"><X className="w-3.5 h-3.5" /></button>
+                  </div>
                 </div>
               ))}
             </div>
