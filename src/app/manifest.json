@@ -1,7 +1,7 @@
 {
   "name": "Noubba - File d'attente",
   "short_name": "Noubba",
-  "description": "Le 1er système de file d'attente WhatsApp au Maroc",
+  "description": "Système de file d'attente intelligent en direct au Maroc",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'react-hot-toast';
 import { 
-  User, Scissors, Check, UserX, Snowflake, 
+  User, MessageCircle, Scissors, Check, UserX, Snowflake, 
   Timer, Bell, CheckCircle2, ChevronLeft, LogOut, Loader2, UserPlus, X, Circle
 } from 'lucide-react';
 
@@ -17,7 +17,7 @@ type Customer = {
   is_confirmed?: boolean;
   status?: string;
   frozen_at?: string;
-  joined_at?: string; // Needed for the math calculations
+  joined_at?: string;
   delay_count?: number;
   queue_services?: {
     services?: {
@@ -30,7 +30,6 @@ type Customer = {
 type StaffMember = {
   id: string;
   name: string;
-  access_pin: string;
   is_available: boolean;
 };
 
@@ -72,7 +71,8 @@ export default function StaffPortal() {
       const { data: shop } = await supabase.from('barbers').select('shop_name').eq('id', shopId).single();
       if (shop) setShopName(shop.shop_name);
 
-      const { data: staffData } = await supabase.from('staff').select('*').eq('barber_id', shopId).order('name', { ascending: true });
+      // Secure query: Only select id, name, is_available (Never access_pin)
+      const { data: staffData } = await supabase.from('staff').select('id, name, is_available').eq('barber_id', shopId).order('name', { ascending: true });
       if (staffData) setStaffList(staffData);
 
       const { data: servicesData } = await supabase.from('services').select('*').eq('barber_id', shopId).order('price_dh', { ascending: true });
@@ -176,11 +176,9 @@ export default function StaffPortal() {
     const strikes = target.delay_count || 0;
 
     if (strikes >= 2) {
-      // Strike 3: Auto Cancel
       await supabase.from('queue').update({ status: 'cancelled' }).eq('id', id);
       toast.error(`${target.customer_name} a ignoré 3 alertes. Retiré de la file !`);
     } else if (strikes === 1) {
-      // Strike 2: Bottom of the Queue (now)
       await supabase.from('queue').update({
         joined_at: new Date().toISOString(),
         alerted_at: null,
@@ -189,7 +187,6 @@ export default function StaffPortal() {
       }).eq('id', id);
       toast.error(`${target.customer_name} relégué à la fin de la file !`);
     } else {
-      // Strike 1: +15 minutes
       const newJoinedAt = new Date(new Date().getTime() + 15 * 60000).toISOString();
       await supabase.from('queue').update({
         joined_at: newJoinedAt,
@@ -206,18 +203,34 @@ export default function StaffPortal() {
   const handleKeyPress = (num: string) => { if (pin.length < 4) setPin(prev => prev + num); };
   const handleBackspace = () => setPin(prev => prev.slice(0, -1));
 
+  // Server-side PIN verification
   useEffect(() => {
     if (pin.length === 4 && selectedStaff) {
-      setIsVerifying(true);
-      if (selectedStaff.access_pin === pin) {
-        setAuthenticatedStaff(selectedStaff);
-      } else {
-        toast.error('PIN incorrect.');
-        setPin('');
-      }
-      setIsVerifying(false);
+      const verifyPin = async () => {
+        setIsVerifying(true);
+        try {
+          const res = await fetch('/api/staff/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ staffId: selectedStaff.id, pin }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            setAuthenticatedStaff(selectedStaff);
+          } else {
+            toast.error(data.error || 'PIN incorrect.');
+            setPin('');
+          }
+        } catch {
+          toast.error('Erreur de connexion.');
+          setPin('');
+        } finally {
+          setIsVerifying(false);
+        }
+      };
+      verifyPin();
     }
-  }, [pin]);
+  }, [pin, selectedStaff]);
 
   const handleComplete = async (customerId: string) => {
     await supabase.from('queue').update({ status: 'completed' }).eq('id', customerId);
@@ -244,7 +257,6 @@ export default function StaffPortal() {
     fetchChairQueue();
   };
   
-  // Clean manual cancellation
   const handleHardCancel = async (customerId: string) => {
     const confirm = window.confirm("Retirer définitivement ce client de la file ?");
     if (!confirm) return;
@@ -290,7 +302,6 @@ export default function StaffPortal() {
       return total + (s?.duration_minutes || 0);
     }, 0);
 
-    // Ensure walk-ins go absolutely to the bottom, even past penalized clients
     let newJoinedAt = new Date().toISOString();
     if (queueRef.current.length > 0) {
       const maxTime = Math.max(...queueRef.current.map(c => new Date(c.joined_at || new Date()).getTime()));
@@ -512,9 +523,22 @@ export default function StaffPortal() {
                         {isAlerted ? (
                           <div className={`w-full h-10 font-black rounded-xl text-xs flex items-center justify-center gap-2 text-white ${timeRemaining > 0 ? 'bg-orange-500' : 'bg-red-500'}`}><Timer className="w-4 h-4" /> {timeRemaining > 0 ? formatTime(timeRemaining) : "Relégation..."}</div>
                         ) : (
-                          <button onClick={() => handleManualNotify(customer)} disabled={isSendingAlert === customer.id} className="w-full h-10 flex items-center justify-center gap-2 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-xl text-xs disabled:opacity-50">
-                            {isSendingAlert === customer.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Bell className="w-3.5 h-3.5 text-amber-400" /> Appeler le client (Push)</>}
-                          </button>
+                          <div className="flex gap-2">
+                            <button onClick={() => handleManualNotify(customer)} disabled={isSendingAlert === customer.id} className="flex-1 h-10 flex items-center justify-center gap-2 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-xl text-xs disabled:opacity-50">
+                              {isSendingAlert === customer.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Bell className="w-3.5 h-3.5 text-amber-400" /> Appeler (Push)</>}
+                            </button>
+                            {customer.whatsapp_number && (
+                              <a
+                                href={`https://wa.me/${customer.whatsapp_number.replace(/\D/g, '').replace(/^0/, '212')}?text=${encodeURIComponent(`Salam ${customer.customer_name}, c'est bientôt votre tour chez ${shopName} (${authenticatedStaff?.name || 'au fauteuil'}) ! Merci de vous rapprocher.`)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="w-10 h-10 flex items-center justify-center bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl active:scale-[0.98] shrink-0 transition-colors"
+                                title="Alerter sur WhatsApp (Gratuit)"
+                              >
+                                <MessageCircle className="w-4 h-4" />
+                              </a>
+                            )}
+                          </div>
                         )}
                       </div>
                     )}

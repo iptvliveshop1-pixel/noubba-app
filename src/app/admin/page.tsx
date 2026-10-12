@@ -158,7 +158,12 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               </div>
-              <Link href={`/${barber.owner_name.toLowerCase().replace(/\s+/g, '-')}`} className="w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 active:bg-slate-100">
+              <Link 
+                href={`/q/${barber.id}`} 
+                target="_blank" 
+                className="w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-900 active:bg-slate-100 transition-colors"
+                title="Voir la vitrine client"
+              >
                 <Search className="w-4 h-4" />
               </Link>
             </div>

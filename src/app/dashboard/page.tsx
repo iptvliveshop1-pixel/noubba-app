@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
-import { Bell, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon, KeyRound, Circle, Loader2 } from 'lucide-react';
+import { Bell, MessageCircle, Tv, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon, KeyRound, Circle, Loader2 } from 'lucide-react';
 
 type Customer = {
   id: string;
@@ -994,17 +994,30 @@ export default function Dashboard() {
                                               <Timer className="w-4 h-4" /> {timeRemaining > 0 ? formatTime(timeRemaining) : "Relégation auto..."}
                                             </button>
                                           ) : (
-                                            <button 
-                                              onClick={() => handleNotify(customer)} 
-                                              disabled={isSendingAuth === customer.id} 
-                                              className="w-full h-10 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl active:scale-[0.98] disabled:opacity-50 text-xs"
-                                            >
-                                              {isSendingAuth === customer.id ? (
-                                                <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                              ) : (
-                                                <><Bell className="w-3.5 h-3.5 text-amber-400" /> Alerter (App)</>
+                                            <div className="flex gap-2">
+                                              <button 
+                                                onClick={() => handleNotify(customer)} 
+                                                disabled={isSendingAuth === customer.id} 
+                                                className="flex-1 h-10 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl active:scale-[0.98] disabled:opacity-50 text-xs"
+                                              >
+                                                {isSendingAuth === customer.id ? (
+                                                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                                ) : (
+                                                  <><Bell className="w-3.5 h-3.5 text-amber-400" /> Alerter (App)</>
+                                                )}
+                                              </button>
+                                              {displayPhone && (
+                                                <a
+                                                  href={`https://wa.me/${displayPhone.replace(/\D/g, '').replace(/^0/, '212')}?text=${encodeURIComponent(`Salam ${customer.customers?.full_name || customer.customer_name}, c'est bientôt votre tour chez ${shopName} ! Merci de vous rapprocher.`)}`}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="w-10 h-10 flex items-center justify-center bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl active:scale-[0.98] shrink-0 transition-colors"
+                                                  title="Alerter sur WhatsApp (Gratuit)"
+                                                >
+                                                  <MessageCircle className="w-4 h-4" />
+                                                </a>
                                               )}
-                                            </button>
+                                            </div>
                                           )}
                                         </div>
                                       )}
@@ -1261,6 +1274,14 @@ export default function Dashboard() {
                     {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-amber-400" />}
                     {copied ? 'Lien Copié !' : 'Copier le lien direct client'}
                   </button>
+                  <a
+                    href={`/screen/${barberId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full h-12 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-white/10"
+                  >
+                    <Tv className="w-4 h-4 text-amber-400" /> Mode Écran Salon (TV)
+                  </a>
                 </div>
               </div>
             )}
