@@ -526,7 +526,7 @@ export default function ClientDashboard() {
     if (nextPerson) {
       newJoinedAt = new Date(new Date(nextPerson.joined_at).getTime() + 1000).toISOString();
     } else {
-      newJoinedAt = new Date(new Date(activeQueue.joined_at).getTime() + 15 * 60000).toISOString();
+      newJoinedAt = new Date().toISOString();
     }
 
     const { error } = await supabase
@@ -601,6 +601,7 @@ export default function ClientDashboard() {
       </div>
     );
   }
+
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-blue-200">
       <audio ref={audioRef} src="/ding.mp3" preload="auto" />

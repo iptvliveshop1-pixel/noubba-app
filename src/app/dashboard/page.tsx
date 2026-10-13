@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
-import { Bell, MessageCircle, Tv, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon, KeyRound, Circle, Loader2 } from 'lucide-react';
+import { Bell, MessageCircle, Tv, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon, KeyRound, Circle, Loader2, Volume2, VolumeX } from 'lucide-react';
 
 type Customer = {
   id: string;
@@ -114,6 +114,44 @@ export default function Dashboard() {
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const [timers, setTimers] = useState<Record<string, number>>({});
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const soundEnabledRef = useRef(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('noubba_sound_enabled');
+    if (saved === 'true') {
+      setSoundEnabled(true);
+      soundEnabledRef.current = true;
+    }
+  }, []);
+
+  const toggleSound = () => {
+    if (!soundEnabled) {
+      const audio = new Audio('/ding.mp3');
+      audio.play().then(() => {
+        setSoundEnabled(true);
+        soundEnabledRef.current = true;
+        localStorage.setItem('noubba_sound_enabled', 'true');
+        toast.success("Son activé ! Test sonore 🔔", { style: { borderRadius: '12px' } });
+      }).catch(e => {
+        console.log("Audio unlock failed:", e);
+        toast.error("Autorisez le son dans votre navigateur");
+      });
+    } else {
+      setSoundEnabled(false);
+      soundEnabledRef.current = false;
+      localStorage.setItem('noubba_sound_enabled', 'false');
+      toast("Son coupé 🔕", { style: { borderRadius: '12px' } });
+    }
+  };
+
+  const testSound = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const audio = new Audio('/ding.mp3');
+    audio.play().then(() => {
+      toast.success("Test sonore 🔔", { style: { borderRadius: '12px' } });
+    }).catch(e => console.log("Audio test error", e));
+  };
   
   const queueRef = useRef<Customer[]>([]);
   const staffRef = useRef<any[]>([]);
@@ -127,15 +165,40 @@ export default function Dashboard() {
       await supabase.from('queue').update({ status: 'cancelled' }).eq('id', customer.id);
       toast.error(`${customer.customer_name} a ignoré 3 alertes. Retiré de la file !`);
     } else if (strikes === 1) {
+      const currentQueue = queueRef.current.filter(c => 
+        customer.staff_id ? c.staff_id === customer.staff_id : true
+      );
+      const otherClients = currentQueue.filter(c => c.id !== customer.id);
+      
+      let newJoinedAt = new Date().toISOString();
+      if (otherClients.length > 0) {
+        const lastClient = otherClients[otherClients.length - 1];
+        const lastTime = new Date(lastClient.joined_at || new Date()).getTime();
+        newJoinedAt = new Date(Math.max(Date.now(), lastTime + 1000)).toISOString();
+      }
+
       await supabase.from('queue').update({
-        joined_at: new Date().toISOString(),
+        joined_at: newJoinedAt,
         alerted_at: null,
         is_confirmed: false,
         delay_count: 2
       }).eq('id', customer.id);
       toast.error(`${customer.customer_name} relégué à la fin de la file !`);
     } else {
-      const newJoinedAt = new Date(new Date().getTime() + 15 * 60000).toISOString();
+      const currentQueue = queueRef.current.filter(c => 
+        customer.staff_id ? c.staff_id === customer.staff_id : true
+      );
+      const currentIndex = currentQueue.findIndex(c => c.id === customer.id);
+      
+      let newJoinedAt = new Date().toISOString();
+      if (currentIndex !== -1 && currentIndex < currentQueue.length - 1) {
+        const nextPerson = currentQueue[currentIndex + 1];
+        const nextTime = new Date(nextPerson.joined_at || new Date()).getTime();
+        newJoinedAt = new Date(nextTime + 1000).toISOString();
+      } else {
+        newJoinedAt = new Date().toISOString();
+      }
+
       await supabase.from('queue').update({
         joined_at: newJoinedAt,
         alerted_at: null,
@@ -241,9 +304,9 @@ export default function Dashboard() {
         }
       });
 
-      if (shouldPlaySound) {
+      if (shouldPlaySound && soundEnabledRef.current) {
         const audio = new Audio('/ding.mp3');
-        audio.play().catch(e => console.log("Audio blocked"));
+        audio.play().catch(e => console.log("Audio blocked", e));
       }
 
       setQueue(activeClients as Customer[]);
@@ -616,15 +679,7 @@ export default function Dashboard() {
       return total + (s?.duration_minutes || 0);
     }, 0);
 
-    let newJoinedAt = new Date().toISOString();
-    const specificQueue = queueRef.current.filter(c => c.staff_id === selectedStaffId);
-    if (specificQueue.length > 0) {
-      const maxTime = Math.max(...specificQueue.map(c => new Date(c.joined_at || new Date()).getTime()));
-      const nowTime = new Date().getTime();
-      if (maxTime > nowTime) {
-        newJoinedAt = new Date(maxTime + 1000).toISOString(); 
-      }
-    }
+    const newJoinedAt = new Date().toISOString();
 
     const { data: newTicket, error } = await supabase.from('queue').insert([{
       barber_id: barberId,
@@ -800,9 +855,40 @@ export default function Dashboard() {
             <Power className="w-4 h-4 shrink-0" /> <span className="truncate">{isOpen ? 'Salon Ouvert' : 'Salon Fermé'}</span>
           </button>
           
-          <button onClick={handleLogout} className="w-10 h-10 shrink-0 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-slate-300 hover:text-white active:scale-95 transition-all backdrop-blur-md">
-            <LogOut className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {!soundEnabled ? (
+              <button
+                onClick={toggleSound}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-full font-bold text-xs transition-all border backdrop-blur-md bg-white/10 text-slate-300 border-white/20 active:scale-95 hover:bg-white/20 shadow-sm"
+                title="Cliquer pour activer le son des alertes"
+              >
+                <VolumeX className="w-4 h-4 text-slate-400" />
+                <span className="hidden sm:inline">Activer le son</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-1 bg-emerald-500/20 border border-emerald-500/30 rounded-full px-2.5 py-1.5 backdrop-blur-md shadow-sm">
+                <button
+                  onClick={testSound}
+                  className="flex items-center gap-1.5 text-emerald-300 font-bold text-xs hover:text-white transition-colors"
+                  title="Tester le son du salon"
+                >
+                  <Volume2 className="w-4 h-4 text-emerald-400" />
+                  <span className="hidden sm:inline">Son Activé</span>
+                </button>
+                <button
+                  onClick={toggleSound}
+                  className="text-slate-400 hover:text-red-400 text-xs ml-1 pl-1 border-l border-emerald-500/30"
+                  title="Couper le son"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            <button onClick={handleLogout} className="w-10 h-10 shrink-0 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-slate-300 hover:text-white active:scale-95 transition-all backdrop-blur-md" title="Déconnexion">
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         <div className="relative z-10 mt-8 flex items-center gap-4">

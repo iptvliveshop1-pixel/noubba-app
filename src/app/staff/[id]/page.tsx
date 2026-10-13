@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'react-hot-toast';
 import { 
   User, MessageCircle, Scissors, Check, UserX, Snowflake, 
-  Timer, Bell, CheckCircle2, ChevronLeft, LogOut, Loader2, UserPlus, X, Circle
+  Timer, Bell, CheckCircle2, ChevronLeft, LogOut, Loader2, UserPlus, X, Circle, Volume2, VolumeX
 } from 'lucide-react';
 
 type Customer = {
@@ -17,7 +17,7 @@ type Customer = {
   is_confirmed?: boolean;
   status?: string;
   frozen_at?: string;
-  joined_at?: string;
+  joined_at?: string; // Needed for the math calculations
   delay_count?: number;
   queue_services?: {
     services?: {
@@ -50,6 +50,44 @@ export default function StaffPortal() {
   const [frozenQueue, setFrozenQueue] = useState<Customer[]>([]);
   const [isSendingAlert, setIsSendingAlert] = useState<string | null>(null);
   const [timers, setTimers] = useState<Record<string, number>>({});
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const soundEnabledRef = useRef(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('noubba_sound_enabled');
+    if (saved === 'true') {
+      setSoundEnabled(true);
+      soundEnabledRef.current = true;
+    }
+  }, []);
+
+  const toggleSound = () => {
+    if (!soundEnabled) {
+      const audio = new Audio('/ding.mp3');
+      audio.play().then(() => {
+        setSoundEnabled(true);
+        soundEnabledRef.current = true;
+        localStorage.setItem('noubba_sound_enabled', 'true');
+        toast.success("Son activé ! Test sonore 🔔", { style: { borderRadius: '12px' } });
+      }).catch(e => {
+        console.log("Audio unlock failed:", e);
+        toast.error("Autorisez le son dans votre navigateur");
+      });
+    } else {
+      setSoundEnabled(false);
+      soundEnabledRef.current = false;
+      localStorage.setItem('noubba_sound_enabled', 'false');
+      toast("Son coupé 🔕", { style: { borderRadius: '12px' } });
+    }
+  };
+
+  const testSound = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const audio = new Audio('/ding.mp3');
+    audio.play().then(() => {
+      toast.success("Test sonore 🔔", { style: { borderRadius: '12px' } });
+    }).catch(e => console.log("Audio test error", e));
+  };
 
   const [showWalkInModal, setShowWalkInModal] = useState(false);
   const [walkInName, setWalkInName] = useState('');
@@ -71,7 +109,6 @@ export default function StaffPortal() {
       const { data: shop } = await supabase.from('barbers').select('shop_name').eq('id', shopId).single();
       if (shop) setShopName(shop.shop_name);
 
-      // Secure query: Only select id, name, is_available (Never access_pin)
       const { data: staffData } = await supabase.from('staff').select('id, name, is_available').eq('barber_id', shopId).order('name', { ascending: true });
       if (staffData) setStaffList(staffData);
 
@@ -147,10 +184,14 @@ export default function StaffPortal() {
       const activeClients = data.filter(c => c.status === 'waiting');
       const frozenClients = data.filter(c => c.status === 'frozen');
       
+      const previousIds = new Set(queueRef.current.map(c => c.id));
+      const hasNewClient = queueRef.current.length > 0 && activeClients.some(c => !previousIds.has(c.id));
+      let hasConfirmed = false;
+
       activeClients.forEach(client => {
         if (client.is_confirmed && !confirmedIds.current.has(client.id)) {
           confirmedIds.current.add(client.id);
-          new Audio('/ding.mp3').play().catch(e => console.log("Audio blocked"));
+          hasConfirmed = true;
         }
         if (client.alerted_at && !client.is_confirmed && !timers[client.id]) {
           const elapsed = Math.floor((new Date().getTime() - new Date(client.alerted_at).getTime()) / 1000);
@@ -159,6 +200,10 @@ export default function StaffPortal() {
           setTimers(prev => ({ ...prev, [client.id]: remaining }));
         }
       });
+
+      if ((hasConfirmed || hasNewClient) && soundEnabledRef.current) {
+        new Audio('/ding.mp3').play().catch(e => console.log("Audio blocked", e));
+      }
       setQueue(activeClients);
       setFrozenQueue(frozenClients);
       queueRef.current = activeClients;
@@ -176,18 +221,38 @@ export default function StaffPortal() {
     const strikes = target.delay_count || 0;
 
     if (strikes >= 2) {
+      // Strike 3: Auto Cancel
       await supabase.from('queue').update({ status: 'cancelled' }).eq('id', id);
       toast.error(`${target.customer_name} a ignoré 3 alertes. Retiré de la file !`);
     } else if (strikes === 1) {
+      // Strike 2: Bottom of the Queue
+      const otherClients = queueRef.current.filter(c => c.id !== id);
+      let newJoinedAt = new Date().toISOString();
+      if (otherClients.length > 0) {
+        const lastClient = otherClients[otherClients.length - 1];
+        const lastTime = new Date(lastClient.joined_at || new Date()).getTime();
+        newJoinedAt = new Date(Math.max(Date.now(), lastTime + 1000)).toISOString();
+      }
+
       await supabase.from('queue').update({
-        joined_at: new Date().toISOString(),
+        joined_at: newJoinedAt,
         alerted_at: null,
         is_confirmed: false,
         delay_count: 2
       }).eq('id', id);
       toast.error(`${target.customer_name} relégué à la fin de la file !`);
     } else {
-      const newJoinedAt = new Date(new Date().getTime() + 15 * 60000).toISOString();
+      // Strike 1: Postpone 1 spot behind the next client
+      const currentIndex = queueRef.current.findIndex(c => c.id === id);
+      let newJoinedAt = new Date().toISOString();
+      if (currentIndex !== -1 && currentIndex < queueRef.current.length - 1) {
+        const nextPerson = queueRef.current[currentIndex + 1];
+        const nextTime = new Date(nextPerson.joined_at || new Date()).getTime();
+        newJoinedAt = new Date(nextTime + 1000).toISOString();
+      } else {
+        newJoinedAt = new Date().toISOString();
+      }
+
       await supabase.from('queue').update({
         joined_at: newJoinedAt,
         alerted_at: null,
@@ -203,7 +268,6 @@ export default function StaffPortal() {
   const handleKeyPress = (num: string) => { if (pin.length < 4) setPin(prev => prev + num); };
   const handleBackspace = () => setPin(prev => prev.slice(0, -1));
 
-  // Server-side PIN verification
   useEffect(() => {
     if (pin.length === 4 && selectedStaff) {
       const verifyPin = async () => {
@@ -257,6 +321,7 @@ export default function StaffPortal() {
     fetchChairQueue();
   };
   
+  // Clean manual cancellation
   const handleHardCancel = async (customerId: string) => {
     const confirm = window.confirm("Retirer définitivement ce client de la file ?");
     if (!confirm) return;
@@ -302,14 +367,7 @@ export default function StaffPortal() {
       return total + (s?.duration_minutes || 0);
     }, 0);
 
-    let newJoinedAt = new Date().toISOString();
-    if (queueRef.current.length > 0) {
-      const maxTime = Math.max(...queueRef.current.map(c => new Date(c.joined_at || new Date()).getTime()));
-      const nowTime = new Date().getTime();
-      if (maxTime > nowTime) {
-        newJoinedAt = new Date(maxTime + 1000).toISOString(); 
-      }
-    }
+    const newJoinedAt = new Date().toISOString();
 
     const { data: newTicket, error } = await supabase.from('queue').insert([{
       barber_id: shopId,
@@ -449,7 +507,37 @@ export default function StaffPortal() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black"></div>
         <div className="absolute top-4 w-full left-0 px-4 flex justify-between items-center z-20">
           <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-black tracking-wider px-3 py-1 rounded-full backdrop-blur-md">Session : {authenticatedStaff?.name}</span>
-          <button onClick={() => { setAuthenticatedStaff(null); setSelectedStaff(null); setPin(''); }} className="w-10 h-10 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-slate-300 active:scale-95 transition-all backdrop-blur-md"><LogOut className="w-4 h-4" /></button>
+          <div className="flex items-center gap-2">
+            {!soundEnabled ? (
+              <button
+                onClick={toggleSound}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full font-bold text-xs transition-all border backdrop-blur-md bg-white/10 text-slate-300 border-white/20 active:scale-95 hover:bg-white/20 shadow-sm"
+                title="Cliquer pour activer le son"
+              >
+                <VolumeX className="w-3.5 h-3.5 text-slate-400" />
+                <span className="hidden sm:inline">Activer Son</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-1 bg-emerald-500/20 border border-emerald-500/30 rounded-full px-2.5 py-1 backdrop-blur-md shadow-sm">
+                <button
+                  onClick={testSound}
+                  className="flex items-center gap-1.5 text-emerald-300 font-bold text-xs hover:text-white transition-colors"
+                  title="Tester le son"
+                >
+                  <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="hidden sm:inline">Son Activé</span>
+                </button>
+                <button
+                  onClick={toggleSound}
+                  className="text-slate-400 hover:text-red-400 text-xs ml-1 pl-1 border-l border-emerald-500/30"
+                  title="Couper le son"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+            <button onClick={() => { setAuthenticatedStaff(null); setSelectedStaff(null); setPin(''); }} className="w-10 h-10 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-slate-300 active:scale-95 transition-all backdrop-blur-md" title="Changer de profil"><LogOut className="w-4 h-4" /></button>
+          </div>
         </div>
         <div className="relative z-10 mt-4 flex justify-between items-end">
           <div>
