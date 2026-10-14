@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, TrendingUp, Users, DollarSign, BarChart3, Scissors, Wallet, User, Calendar } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Users, DollarSign, BarChart3, Scissors, Wallet, User, UserX, Clock } from 'lucide-react';
 import Link from 'next/link';
 
 type Timeframe = 'today' | 'week' | 'month';
@@ -14,10 +14,12 @@ export default function AnalyticsDashboard() {
   
   // Metrics State
   const [totalClients, setTotalClients] = useState(0);
+  const [noShowCount, setNoShowCount] = useState(0);
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [averageBasket, setAverageBasket] = useState(0);
   const [popularServices, setPopularServices] = useState<{name: string, count: number, revenue: number}[]>([]);
   const [staffPerformance, setStaffPerformance] = useState<{name: string, clients: number, revenue: number}[]>([]);
+  const [peakHours, setPeakHours] = useState<{slot: string, count: number}[]>([]);
 
   const router = useRouter();
 
@@ -56,18 +58,20 @@ export default function AnalyticsDashboard() {
       }
       const isoStart = startDate.toISOString();
 
-      // 3. Query completed tickets
-      const { data: completedTickets, error } = await supabase
+      // 3. Query completed and cancelled tickets
+      const { data: allTickets, error } = await supabase
         .from('queue')
         .select(`
           id,
+          status,
+          joined_at,
           staff (name),
           queue_services (
             services (service_name, price_dh)
           )
         `)
         .eq('barber_id', barber.id)
-        .eq('status', 'completed')
+        .in('status', ['completed', 'cancelled'])
         .gte('joined_at', isoStart);
 
       if (error) {
@@ -76,16 +80,26 @@ export default function AnalyticsDashboard() {
         return;
       }
 
-      if (completedTickets) {
+      if (allTickets) {
+        const completedTickets = allTickets.filter(t => t.status === 'completed');
+        const cancelledTickets = allTickets.filter(t => t.status === 'cancelled');
+
         setTotalClients(completedTickets.length);
+        setNoShowCount(cancelledTickets.length);
 
         let revenueCount = 0;
         const serviceStats: Record<string, { count: number, revenue: number }> = {};
         const staffStats: Record<string, { clients: number, revenue: number }> = {};
+        const hourBuckets: Record<string, number> = {};
 
-        // Crunch the numbers
         completedTickets.forEach(ticket => {
           let ticketRevenue = 0;
+
+          if (ticket.joined_at) {
+            const hour = new Date(ticket.joined_at).getHours();
+            const slotLabel = `${String(hour).padStart(2, '0')}h00 - ${String(hour + 1).padStart(2, '0')}h00`;
+            hourBuckets[slotLabel] = (hourBuckets[slotLabel] || 0) + 1;
+          }
 
           if (ticket.queue_services) {
             ticket.queue_services.forEach((qs: any) => {
@@ -96,7 +110,6 @@ export default function AnalyticsDashboard() {
                 ticketRevenue += price;
                 revenueCount += price;
 
-                // Track popular services
                 if (!serviceStats[name]) {
                   serviceStats[name] = { count: 0, revenue: 0 };
                 }
@@ -106,7 +119,6 @@ export default function AnalyticsDashboard() {
             });
           }
 
-          // Track Individual Staff Performance
           const staffName = (ticket.staff as any)?.name || 'Non assigné';
           if (!staffStats[staffName]) {
             staffStats[staffName] = { clients: 0, revenue: 0 };
@@ -118,7 +130,6 @@ export default function AnalyticsDashboard() {
         setTotalRevenue(revenueCount);
         setAverageBasket(completedTickets.length > 0 ? Math.round(revenueCount / completedTickets.length) : 0);
 
-        // Convert the service stats object into an array and sort by most popular
         const sortedServices = Object.keys(serviceStats)
           .map(key => ({
             name: key,
@@ -129,7 +140,6 @@ export default function AnalyticsDashboard() {
 
         setPopularServices(sortedServices);
 
-        // Convert staff stats into an array and sort by highest revenue
         const sortedStaff = Object.keys(staffStats)
           .map(key => ({
             name: key,
@@ -139,6 +149,13 @@ export default function AnalyticsDashboard() {
           .sort((a, b) => b.revenue - a.revenue);
 
         setStaffPerformance(sortedStaff);
+
+        const sortedHours = Object.keys(hourBuckets)
+          .map(slot => ({ slot, count: hourBuckets[slot] }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 5);
+
+        setPeakHours(sortedHours);
       }
 
       setIsLoading(false);
@@ -157,6 +174,8 @@ export default function AnalyticsDashboard() {
         return "30 Derniers Jours";
     }
   };
+
+  const maxHourCount = peakHours.length > 0 ? Math.max(...peakHours.map(h => h.count), 1) : 1;
 
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col font-sans selection:bg-amber-200">
@@ -234,28 +253,38 @@ export default function AnalyticsDashboard() {
         ) : (
           <>
             {/* KPI CARDS */}
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between">
-                <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center mb-4 border border-emerald-100">
-                  <DollarSign className="w-5 h-5" />
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between">
+                <div className="w-9 h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center mb-3 border border-emerald-100">
+                  <DollarSign className="w-4 h-4" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Chiffre d'Affaires</p>
-                  <h3 className="text-2xl font-black text-slate-900">{totalRevenue} <span className="text-sm font-bold text-slate-500">DH</span></h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Recettes</p>
+                  <h3 className="text-xl sm:text-2xl font-black text-slate-900">{totalRevenue} <span className="text-xs font-bold text-slate-500">DH</span></h3>
                 </div>
               </div>
 
-              <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between">
-                <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-4 border border-blue-100">
-                  <Users className="w-5 h-5" />
+              <div className="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-slate-100 flex flex-col justify-between">
+                <div className="w-9 h-9 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-3 border border-blue-100">
+                  <Users className="w-4 h-4" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Clients Servis</p>
-                  <h3 className="text-2xl font-black text-slate-900">{totalClients}</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Clients Servis</p>
+                  <h3 className="text-xl sm:text-2xl font-black text-slate-900">{totalClients}</h3>
                 </div>
               </div>
 
-              <div className="col-span-2 bg-slate-900 p-5 rounded-3xl shadow-lg shadow-slate-900/10 border border-slate-800 flex items-center justify-between group overflow-hidden relative">
+              <div className="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-red-100 flex flex-col justify-between">
+                <div className="w-9 h-9 bg-red-50 text-red-500 rounded-xl flex items-center justify-center mb-3 border border-red-100">
+                  <UserX className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-red-400 uppercase tracking-wider mb-0.5">No-Shows / Annulés</p>
+                  <h3 className="text-xl sm:text-2xl font-black text-red-600">{noShowCount}</h3>
+                </div>
+              </div>
+
+              <div className="col-span-3 bg-slate-900 p-5 rounded-3xl shadow-lg shadow-slate-900/10 border border-slate-800 flex items-center justify-between group overflow-hidden relative">
                 <div className="absolute -right-4 -bottom-4 opacity-5 pointer-events-none group-hover:scale-110 transition-transform">
                   <Wallet className="w-32 h-32 text-white" />
                 </div>
@@ -298,6 +327,43 @@ export default function AnalyticsDashboard() {
                           <span className="font-bold text-slate-700 capitalize">{staff.name}</span>
                         </div>
                         <span className="font-black text-emerald-600">{staff.revenue} <span className="text-xs text-emerald-600/70 font-bold">DH</span></span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* PEAK HOURS LEDGER */}
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden mb-6">
+              <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
+                <div className="w-8 h-8 bg-white border border-slate-200 rounded-lg flex items-center justify-center shadow-sm">
+                  <Clock className="w-4 h-4 text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 leading-tight">Heures de Pointe</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Créneaux les plus fréquentés</p>
+                </div>
+              </div>
+              <div className="p-4">
+                {peakHours.length === 0 ? (
+                  <div className="text-center py-6">
+                    <p className="text-slate-400 font-bold text-sm">Pas encore de données horaires.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {peakHours.map((item, idx) => (
+                      <div key={idx} className="space-y-1">
+                        <div className="flex justify-between text-xs font-bold">
+                          <span className="font-mono text-slate-700">{item.slot}</span>
+                          <span className="text-slate-900 font-black">{item.count} client(s)</span>
+                        </div>
+                        <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-amber-500 rounded-full" 
+                            style={{ width: `${Math.round((item.count / maxHourCount) * 100)}%` }}
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>

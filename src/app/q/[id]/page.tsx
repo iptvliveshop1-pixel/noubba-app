@@ -3,17 +3,42 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter, useParams } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { Scissors, MapPin, Users, ArrowRight, LogIn, CheckCircle2, Circle, X, UserCircle, Clock, User, Phone, Globe } from 'lucide-react';
+import { Scissors, MapPin, Users, ArrowRight, CheckCircle2, Circle, X, UserCircle, Phone, User, Globe, Clock } from 'lucide-react';
+
+const toSlug = (str: string) =>
+  str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+
+const DEFAULT_WORKING_HOURS: Record<string, any> = {
+  auto_mode: false,
+  monday:    { open: '09:30', close: '21:30', closed: false },
+  tuesday:   { open: '09:30', close: '21:30', closed: false },
+  wednesday: { open: '09:30', close: '21:30', closed: false },
+  thursday:  { open: '09:30', close: '21:30', closed: false },
+  friday:    { open: '15:00', close: '22:00', closed: false },
+  saturday:  { open: '09:30', close: '22:00', closed: false },
+  sunday:    { open: '10:00', close: '20:00', closed: true },
+};
 
 const translations = {
   fr: {
     salonNotFound: "Ce salon n'existe pas ou le lien est invalide.",
     qrInvalidTitle: "Salon introuvable",
-    qrInvalidDesc: "Ce code QR n'est plus valide.",
+    qrInvalidDesc: "Ce lien ou code QR n'est plus valide.",
     seeOnMap: "Voir sur la carte",
     locationDefault: "Maroc",
     closedNow: "Le salon est actuellement fermé.",
     closedBtn: "Fermé pour le moment",
+    opensAt: "Ouvre à",
+    dayOff: "Jour de repos",
+    todayHours: "Aujourd'hui",
+    weeklyHoursTitle: "Horaires d'ouverture",
     estimatedWait: "Estimation d'attente",
     noWait: "Aucune",
     salonFree: "Le salon est libre, prenez votre place !",
@@ -22,37 +47,50 @@ const translations = {
     personPlural: "personnes",
     barbersAvailable: "coiffeurs disponibles",
     takeMyPlace: "Prendre ma place",
-    loginToBook: "Se connecter pour réserver",
     whatDoYouWant: "Que désirez-vous ?",
     customizeVisit: "Personnalisez votre visite",
     withWhom: "Avec qui ?",
     firstAvailable: "Le Premier Dispo",
     servicesTitle: "Prestations",
-    confirmAndJoin: "Confirmer et rejoindre",
+    confirmAndJoin: "Continuer",
     yourDetails: "Vos coordonnées",
-    detailsSubtitle: "Renseignez votre nom et numéro pour valider votre place dans la file.",
-    fullName: "Nom Complet",
-    fullNamePlaceholder: "Ex: Youssef Bennani",
-    phoneNumber: "Numéro de téléphone",
+    detailsSubtitle: "Renseignez votre prénom et numéro WhatsApp pour suivre votre tour en direct.",
+    fullName: "Votre Prénom",
+    fullNamePlaceholder: "Ex: Youssef",
+    phoneNumber: "Téléphone WhatsApp",
     phonePlaceholder: "06 00 00 00 00",
     confirmMyPlace: "Confirmer ma place",
-    alreadyInQueue: "Vous êtes déjà dans une file d'attente !",
+    alreadyInQueue: "Vous avez déjà un ticket actif dans la file !",
     ticketReserved: "Place réservée avec succès !",
     verifying: "Vérification...",
-    savingProfile: "Création de votre profil...",
-    profileSaved: "Profil enregistré !",
+    savingProfile: "Validation de votre place...",
     reservingSpot: "Réservation de votre place...",
     min: "min",
-    currency: "DH"
+    currency: "DH",
+    invalidPhone: "Veuillez entrer un numéro valide (10 chiffres).",
+    invalidName: "Veuillez entrer votre prénom.",
+    days: {
+      monday: "Lundi",
+      tuesday: "Mardi",
+      wednesday: "Mercredi",
+      thursday: "Jeudi",
+      friday: "Vendredi",
+      saturday: "Samedi",
+      sunday: "Dimanche"
+    }
   },
   en: {
     salonNotFound: "This salon does not exist or the link is invalid.",
     qrInvalidTitle: "Shop Not Found",
-    qrInvalidDesc: "This QR code is no longer valid.",
+    qrInvalidDesc: "This link or QR code is no longer valid.",
     seeOnMap: "View on map",
     locationDefault: "Morocco",
     closedNow: "The salon is currently closed.",
     closedBtn: "Currently Closed",
+    opensAt: "Opens at",
+    dayOff: "Closed",
+    todayHours: "Today",
+    weeklyHoursTitle: "Opening Hours",
     estimatedWait: "Estimated Wait",
     noWait: "None",
     salonFree: "No wait right now, take your spot!",
@@ -61,34 +99,43 @@ const translations = {
     personPlural: "people",
     barbersAvailable: "barbers available",
     takeMyPlace: "Join the Queue",
-    loginToBook: "Sign in to join queue",
     whatDoYouWant: "Select Services",
     customizeVisit: "Customize your visit",
     withWhom: "Choose Barber",
     firstAvailable: "First Available",
     servicesTitle: "Services",
-    confirmAndJoin: "Confirm & Join Queue",
+    confirmAndJoin: "Continue",
     yourDetails: "Your Contact Details",
-    detailsSubtitle: "Enter your name and phone number to secure your spot.",
-    fullName: "Full Name",
-    fullNamePlaceholder: "Ex: Alex Miller",
-    phoneNumber: "Phone Number",
+    detailsSubtitle: "Enter your first name and WhatsApp number to track your spot live.",
+    fullName: "First Name",
+    fullNamePlaceholder: "Ex: Youssef",
+    phoneNumber: "WhatsApp Phone",
     phonePlaceholder: "06 00 00 00 00",
     confirmMyPlace: "Confirm My Spot",
-    alreadyInQueue: "You are already in a queue!",
+    alreadyInQueue: "You already have an active ticket in the queue!",
     ticketReserved: "Spot reserved successfully!",
     verifying: "Verifying...",
-    savingProfile: "Saving your details...",
-    profileSaved: "Profile saved!",
+    savingProfile: "Securing your spot...",
     reservingSpot: "Securing your spot...",
     min: "min",
-    currency: "DH"
+    currency: "DH",
+    invalidPhone: "Please enter a valid 10-digit phone number.",
+    invalidName: "Please enter your first name.",
+    days: {
+      monday: "Monday",
+      tuesday: "Tuesday",
+      wednesday: "Wednesday",
+      thursday: "Thursday",
+      friday: "Friday",
+      saturday: "Saturday",
+      sunday: "Sunday"
+    }
   }
 };
 
 export default function SmartStorefront() {
   const params = useParams();
-  const barberId = params.id as string;
+  const rawIdentifier = (params.id || params.barberId) as string;
   const router = useRouter();
 
   const [lang, setLang] = useState<'fr' | 'en'>('fr');
@@ -106,13 +153,15 @@ export default function SmartStorefront() {
   const [isLoading, setIsLoading] = useState(true);
   const [isBooking, setIsBooking] = useState(false);
   const [showServiceModal, setShowServiceModal] = useState(false);
+  const [showHoursModal, setShowHoursModal] = useState(false);
   const [user, setUser] = useState<any>(null);
 
-  // Profile completion modal for missing/OAuth customers
+  // Guest Details Modal
   const [showProfilePromptModal, setShowProfilePromptModal] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [profilePhone, setProfilePhone] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [activeTicketId, setActiveTicketId] = useState<string | null>(null);
 
   useEffect(() => {
     const savedLang = localStorage.getItem('noubba_lang');
@@ -120,33 +169,75 @@ export default function SmartStorefront() {
       setLang(savedLang);
     }
 
+    const savedName = localStorage.getItem('noubba_guest_name');
+    const savedPhone = localStorage.getItem('noubba_guest_phone');
+    if (savedName) setProfileName(savedName);
+    if (savedPhone) setProfilePhone(savedPhone);
+
     const fetchData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       setUser(session?.user || null);
 
       if (session?.user?.user_metadata) {
-        setProfileName(session.user.user_metadata.full_name || session.user.user_metadata.name || '');
+        const metaName = session.user.user_metadata.full_name || session.user.user_metadata.name || '';
+        if (metaName && !savedName) setProfileName(metaName);
       }
 
-      // 1. Fetch Barber Info
-      const { data: barberData, error: barberError } = await supabase
-        .from('barbers')
-        .select('*')
-        .eq('id', barberId)
-        .single();
+      const savedTicketId = localStorage.getItem('noubba_ticket_id');
+      if (savedTicketId) {
+        const { data: existingTicket } = await supabase
+          .from('queue')
+          .select('id, status')
+          .eq('id', savedTicketId)
+          .in('status', ['waiting', 'frozen'])
+          .maybeSingle();
 
-      if (barberError || !barberData) {
+        if (existingTicket) {
+          setActiveTicketId(existingTicket.id);
+        } else {
+          localStorage.removeItem('noubba_ticket_id');
+        }
+      }
+
+      // 1. Resolve Barber by UUID or Vanity Slug
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawIdentifier);
+      let barberData: any = null;
+
+      if (isUUID) {
+        const { data } = await supabase
+          .from('barbers')
+          .select('*')
+          .eq('id', rawIdentifier)
+          .maybeSingle();
+        barberData = data;
+      } else {
+        const targetSlug = toSlug(decodeURIComponent(rawIdentifier));
+        const { data: allBarbers } = await supabase
+          .from('barbers')
+          .select('*')
+          .eq('approval_status', 'approved');
+
+        if (allBarbers) {
+          barberData = allBarbers.find(
+            b => toSlug(b.shop_name || '') === targetSlug || toSlug(b.owner_name || '') === targetSlug
+          );
+        }
+      }
+
+      if (!barberData || barberData.is_active === false || barberData.approval_status === 'rejected') {
         toast.error(t.salonNotFound, { icon: '❌' });
         setIsLoading(false);
         return;
       }
+
+      const resolvedBarberId = barberData.id;
       setBarber(barberData);
 
-      // 2. Fetch Available Staff Members First
+      // 2. Fetch Available Staff Members
       const { data: staffData } = await supabase
         .from('staff')
-        .select('*')
-        .eq('barber_id', barberId)
+        .select('id, name, is_available')
+        .eq('barber_id', resolvedBarberId)
         .eq('is_available', true)
         .order('created_at', { ascending: true });
         
@@ -158,7 +249,7 @@ export default function SmartStorefront() {
       const { count } = await supabase
         .from('queue')
         .select('*', { count: 'exact', head: true })
-        .eq('barber_id', barberId)
+        .eq('barber_id', resolvedBarberId)
         .eq('status', 'waiting');
       setTotalQueueLength(count || 0);
 
@@ -166,7 +257,7 @@ export default function SmartStorefront() {
       const { data: servicesData } = await supabase
         .from('services')
         .select('*')
-        .eq('barber_id', barberId)
+        .eq('barber_id', resolvedBarberId)
         .order('price_dh', { ascending: true });
       
       if (servicesData) {
@@ -176,8 +267,8 @@ export default function SmartStorefront() {
       setIsLoading(false);
     };
 
-    if (barberId) fetchData();
-  }, [barberId, t.salonNotFound]);
+    if (rawIdentifier) fetchData();
+  }, [rawIdentifier, t.salonNotFound]);
 
   const toggleLanguage = () => {
     const nextLang = lang === 'fr' ? 'en' : 'fr';
@@ -193,79 +284,52 @@ export default function SmartStorefront() {
     );
   };
 
-  const handleInitialClick = async () => {
-    if (!user) {
-      localStorage.setItem('pending_booking_barber_id', barberId);
-      router.push('/client/signup');
+  const handleInitialClick = () => {
+    if (activeTicketId) {
+      toast(t.alreadyInQueue, { icon: '🎟️' });
+      router.push(`/client/dashboard?id=${activeTicketId}`);
       return;
     }
-
-    const toastId = toast.loading(t.verifying, { style: { borderRadius: '12px' } });
-    const { data: existingTicket } = await supabase
-      .from('queue')
-      .select('id')
-      .eq('customer_id', user.id)
-      .in('status', ['waiting', 'frozen'])
-      .maybeSingle();
-
-    if (existingTicket) {
-      toast.error(t.alreadyInQueue, { id: toastId, duration: 4000 });
-      router.push('/client/dashboard');
-      return;
-    }
-
-    toast.dismiss(toastId);
 
     if (services.length > 0) {
       setShowServiceModal(true);
     } else {
-      submitBooking();
+      setShowProfilePromptModal(true);
     }
   };
 
-  const handleSaveProfileAndBook = async (e: React.FormEvent) => {
+  const handleServicesConfirmed = () => {
+    setShowServiceModal(false);
+    setShowProfilePromptModal(true);
+  };
+
+  const handleGuestBook = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profileName.trim() || !profilePhone.trim() || !user) return;
-    
-    setIsSavingProfile(true);
-    const toastId = toast.loading(t.savingProfile);
+    if (!barber) return;
 
-    const cleanPhone = profilePhone.replace(/\s+/g, '');
-    const { data: newCustomer, error } = await supabase.from('customers').upsert([{
-      id: user.id,
-      full_name: profileName.trim(),
-      phone_number: cleanPhone
-    }]).select().single();
-
-    if (error || !newCustomer) {
-      toast.error(`Erreur: ${error?.message || 'Database error'}`, { id: toastId });
-      setIsSavingProfile(false);
+    if (!profileName.trim()) {
+      toast.error(t.invalidName);
       return;
     }
 
-    toast.success(t.profileSaved, { id: toastId });
-    setShowProfilePromptModal(false);
-    setIsSavingProfile(false);
-    
-    submitBooking();
-  };
+    const cleanPhone = profilePhone.replace(/\D/g, '');
+    if (cleanPhone.length < 9) {
+      toast.error(t.invalidPhone);
+      return;
+    }
 
-  const submitBooking = async () => {
-    setIsBooking(true);
-    setShowServiceModal(false);
+    setIsSavingProfile(true);
     const toastId = toast.loading(t.reservingSpot, { style: { borderRadius: '12px' } });
 
-    let { data: customerData } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('id', user.id)
-      .maybeSingle();
+    localStorage.setItem('noubba_guest_name', profileName.trim());
+    localStorage.setItem('noubba_guest_phone', cleanPhone);
 
-    if (!customerData || !customerData.phone_number) {
-      toast.dismiss(toastId);
-      setIsBooking(false);
-      setShowProfilePromptModal(true);
-      return;
+    if (user) {
+      await supabase.from('customers').upsert([{
+        id: user.id,
+        full_name: profileName.trim(),
+        phone_number: cleanPhone
+      }]);
     }
 
     const totalTime = selectedServices.reduce((total, id) => {
@@ -276,25 +340,21 @@ export default function SmartStorefront() {
     const { data: newTicket, error: queueError } = await supabase
       .from('queue')
       .insert([{
-        barber_id: barberId,
-        customer_id: user.id, 
-        customer_name: customerData.full_name, 
-        whatsapp_number: customerData.phone_number, 
+        barber_id: barber.id,
+        customer_id: user?.id || null, 
+        customer_name: profileName.trim(), 
+        whatsapp_number: cleanPhone, 
         status: 'waiting',
         total_estimated_time: totalTime > 0 ? totalTime : null,
-        staff_id: selectedStaffId 
+        staff_id: selectedStaffId || null,
+        joined_at: new Date().toISOString()
       }])
       .select()
       .single();
 
     if (queueError) {
-      if (queueError.code === '23505') {
-        toast.error(t.alreadyInQueue, { id: toastId, duration: 4000 });
-        router.push('/client/dashboard');
-      } else {
-        toast.error(`Erreur DB: ${queueError.message}`, { id: toastId, duration: 6000 });
-      }
-      setIsBooking(false);
+      toast.error(`Erreur: ${queueError.message}`, { id: toastId });
+      setIsSavingProfile(false);
       return;
     }
 
@@ -304,16 +364,17 @@ export default function SmartStorefront() {
         service_id: serviceId
       }));
 
-      const { error: servicesError } = await supabase
-        .from('queue_services')
-        .insert(serviceInserts);
-        
-      if (servicesError) console.error("Error linking services:", servicesError);
+      await supabase.from('queue_services').insert(serviceInserts);
     }
 
-    localStorage.removeItem('pending_booking_barber_id');
+    localStorage.setItem('noubba_ticket_id', newTicket.id);
+    setActiveTicketId(newTicket.id);
+
     toast.success(t.ticketReserved, { id: toastId, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
-    router.push('/client/dashboard');
+    setShowProfilePromptModal(false);
+    setIsSavingProfile(false);
+
+    router.push(`/client/dashboard?id=${newTicket.id}`);
   };
 
   if (isLoading) {
@@ -338,6 +399,23 @@ export default function SmartStorefront() {
     );
   }
 
+  // Evaluate Weekly Schedule & Manual Override
+  const hoursConfig = barber.working_hours || DEFAULT_WORKING_HOURS;
+  const now = new Date();
+  const todayKey = DAY_KEYS[now.getDay()];
+  const todaySchedule = hoursConfig[todayKey] || DEFAULT_WORKING_HOURS[todayKey];
+  const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+  let isWithinSchedule = true;
+  if (hoursConfig.auto_mode) {
+    if (todaySchedule?.closed) {
+      isWithinSchedule = false;
+    } else if (todaySchedule?.open && todaySchedule?.close) {
+      isWithinSchedule = currentHHMM >= todaySchedule.open && currentHHMM <= todaySchedule.close;
+    }
+  }
+
+  const isEffectiveOpen = Boolean(barber.is_open) && isWithinSchedule;
   const activeChairs = Math.max(1, staffMembers.length);
   const effectiveQueuePosition = Math.ceil((totalQueueLength + 1) / activeChairs);
 
@@ -345,7 +423,7 @@ export default function SmartStorefront() {
     <div className="min-h-[100dvh] bg-zinc-50 flex flex-col relative font-sans selection:bg-zinc-200">
       
       {/* PREMIUM HERO */}
-      <div className="h-[45vh] w-full bg-zinc-950 relative flex flex-col items-center justify-center px-6 overflow-hidden">
+      <div className="h-[46vh] w-full bg-zinc-950 relative flex flex-col items-center justify-center px-6 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-zinc-800/40 via-zinc-950 to-zinc-950"></div>
         
         {/* LANGUAGE TOGGLE BUTTON */}
@@ -369,27 +447,60 @@ export default function SmartStorefront() {
                 <Scissors className="w-10 h-10 text-zinc-400" />
               </div>
             )}
-            <div className={`absolute bottom-1 right-1 w-6 h-6 rounded-full border-4 border-zinc-950 ${barber.is_open ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+            <div className={`absolute bottom-1 right-1 w-6 h-6 rounded-full border-4 border-zinc-950 ${isEffectiveOpen ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
           </div>
 
           <h1 className="text-3xl font-black text-white tracking-tight leading-none mb-3">{barber.shop_name}</h1>
-          {barber.location ? (
-            <a href={barber.location} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-zinc-900/50 border border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800 transition-all text-sm font-medium backdrop-blur-md">
-              <MapPin className="w-4 h-4" /> {t.seeOnMap}
-            </a>
-          ) : (
-            <p className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-zinc-900/50 border border-zinc-800 text-zinc-400 text-sm font-medium backdrop-blur-md">
-              <MapPin className="w-4 h-4" /> {t.locationDefault}
-            </p>
-          )}
+          
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {barber.location ? (
+              <a href={barber.location.startsWith('http') ? barber.location : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(barber.location)}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-zinc-900/60 border border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800 transition-all text-xs font-medium backdrop-blur-md">
+                <MapPin className="w-3.5 h-3.5 text-amber-400" /> {t.seeOnMap}
+              </a>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-xs font-medium backdrop-blur-md">
+                <MapPin className="w-3.5 h-3.5" /> {t.locationDefault}
+              </span>
+            )}
+
+            <button
+              onClick={() => setShowHoursModal(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-zinc-900/60 border border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800 transition-all text-xs font-medium backdrop-blur-md"
+            >
+              <Clock className="w-3.5 h-3.5 text-emerald-400" />
+              <span>
+                {todaySchedule?.closed ? t.dayOff : `${todaySchedule?.open || '09:30'} - ${todaySchedule?.close || '21:30'}`}
+              </span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* QUEUE CONTENT SECTION */}
       <div className="flex-1 bg-zinc-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-6 pt-10 pb-32 shadow-[0_-10px_40px_rgba(0,0,0,0.3)]">
-        {!barber.is_open && (
+        {!isEffectiveOpen && (
           <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-2xl text-center font-bold mb-6">
-            {t.closedNow}
+            <p>{t.closedNow}</p>
+            {!todaySchedule?.closed && todaySchedule?.open && (
+              <p className="text-xs font-semibold text-red-500 mt-1">
+                {t.todayHours} : {todaySchedule.open} – {todaySchedule.close}
+              </p>
+            )}
+          </div>
+        )}
+
+        {activeTicketId && (
+          <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center justify-between mb-6 shadow-sm">
+            <div>
+              <p className="font-bold text-amber-900 text-sm">Vous avez une place active !</p>
+              <p className="text-amber-700 text-xs">Suivez votre tour en direct sur votre écran.</p>
+            </div>
+            <button
+              onClick={() => router.push(`/client/dashboard?id=${activeTicketId}`)}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-900 font-black rounded-xl text-xs transition-colors shadow-sm"
+            >
+              Voir mon ticket
+            </button>
           </div>
         )}
 
@@ -427,35 +538,78 @@ export default function SmartStorefront() {
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-zinc-100 z-50 pb-8">
         <button 
           onClick={handleInitialClick} 
-          disabled={!barber.is_open || isBooking} 
+          disabled={!isEffectiveOpen || isBooking} 
           className="w-full h-16 bg-zinc-900 active:bg-black disabled:bg-zinc-300 text-white font-black rounded-2xl transition-all text-lg flex justify-center items-center gap-2 shadow-xl shadow-zinc-900/20"
         >
           {isBooking ? (
             <div className="w-6 h-6 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
-          ) : !barber.is_open ? (
-            t.closedBtn
-          ) : user ? (
-            <>{t.takeMyPlace} <ArrowRight className="w-5 h-5" /></>
+          ) : !isEffectiveOpen ? (
+            !todaySchedule?.closed && todaySchedule?.open && currentHHMM < todaySchedule.open
+              ? `${t.closedBtn} • ${t.opensAt} ${todaySchedule.open}`
+              : t.closedBtn
           ) : (
-            <>{t.loginToBook} <LogIn className="w-5 h-5" /></>
+            <>{t.takeMyPlace} <ArrowRight className="w-5 h-5" /></>
           )}
         </button>
       </div>
 
-      {/* PROFILE COMPLETION MODAL */}
+      {/* WEEKLY OPENING HOURS MODAL */}
+      {showHoursModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl relative animate-in zoom-in-95 duration-300">
+            <button onClick={() => setShowHoursModal(false)} className="absolute top-5 right-5 text-zinc-400 hover:text-zinc-700 bg-zinc-100 p-2 rounded-full transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 bg-emerald-50 text-emerald-600 flex items-center justify-center rounded-xl">
+                <Clock className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-zinc-900 leading-tight">{t.weeklyHoursTitle}</h3>
+                <p className="text-xs font-medium text-zinc-400">{barber.shop_name}</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const).map((dayKey) => {
+                const daySched = hoursConfig[dayKey] || DEFAULT_WORKING_HOURS[dayKey];
+                const isToday = dayKey === todayKey;
+                return (
+                  <div 
+                    key={dayKey} 
+                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs ${
+                      isToday ? 'bg-amber-50 border border-amber-200 font-black text-zinc-900' : 'bg-zinc-50 text-zinc-600 font-bold'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      {t.days[dayKey]}
+                      {isToday && <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>}
+                    </span>
+                    <span className={daySched?.closed ? 'text-red-500 font-bold' : 'font-mono text-zinc-800'}>
+                      {daySched?.closed ? t.dayOff : `${daySched?.open} – ${daySched?.close}`}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GUEST DETAILS MODAL */}
       {showProfilePromptModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 shadow-2xl relative animate-in zoom-in-95 duration-300">
             <button onClick={() => setShowProfilePromptModal(false)} className="absolute top-5 right-5 text-zinc-400 hover:text-zinc-700 bg-zinc-100 p-2 rounded-full transition-colors">
               <X className="w-5 h-5" />
             </button>
-            <div className="w-12 h-12 bg-blue-50 text-blue-600 flex items-center justify-center rounded-2xl mb-4">
+            <div className="w-12 h-12 bg-amber-50 text-amber-600 flex items-center justify-center rounded-2xl mb-4">
               <User className="w-6 h-6" />
             </div>
             <h3 className="text-xl font-black text-zinc-900 mb-1">{t.yourDetails}</h3>
             <p className="text-zinc-500 font-medium text-xs mb-5">{t.detailsSubtitle}</p>
             
-            <form onSubmit={handleSaveProfileAndBook} className="space-y-4">
+            <form onSubmit={handleGuestBook} className="space-y-4">
               <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-3 focus-within:border-zinc-900 focus-within:ring-1">
                 <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">{t.fullName}</label>
                 <div className="flex items-center gap-2">
@@ -593,15 +747,11 @@ export default function SmartStorefront() {
 
             <div className="pt-2 shrink-0">
               <button 
-                onClick={submitBooking}
+                onClick={handleServicesConfirmed}
                 disabled={isBooking || (services.length > 0 && selectedServices.length === 0)}
                 className="w-full h-14 bg-zinc-900 disabled:bg-zinc-300 active:bg-black text-white font-bold rounded-xl transition-all text-lg flex justify-center items-center gap-2"
               >
-                {isBooking ? (
-                  <div className="w-5 h-5 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
-                ) : (
-                  `${t.confirmAndJoin} ${selectedServices.length > 0 ? `(${selectedServices.length})` : ''}`
-                )}
+                {`${t.confirmAndJoin} ${selectedServices.length > 0 ? `(${selectedServices.length})` : ''}`} <ArrowRight className="w-4 h-4" />
               </button>
             </div>
             

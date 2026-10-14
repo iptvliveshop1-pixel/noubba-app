@@ -4,7 +4,13 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
-import { Bell, MessageCircle, Tv, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon, KeyRound, Circle, Loader2, Volume2, VolumeX } from 'lucide-react';
+import { 
+  Bell, MessageCircle, Tv, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, 
+  UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, 
+  User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Plus, Trash2, 
+  ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon, KeyRound, Circle, 
+  Loader2, Volume2, VolumeX, Clock, Users, Search, FileText 
+} from 'lucide-react';
 
 type Customer = {
   id: string;
@@ -28,6 +34,27 @@ type Customer = {
       price_dh: number;
     }
   }[];
+};
+
+const WEEK_DAYS = [
+  { key: 'monday', label: 'Lundi' },
+  { key: 'tuesday', label: 'Mardi' },
+  { key: 'wednesday', label: 'Mercredi' },
+  { key: 'thursday', label: 'Jeudi' },
+  { key: 'friday', label: "Vendredi (Jumu'ah)" },
+  { key: 'saturday', label: 'Samedi' },
+  { key: 'sunday', label: 'Dimanche' },
+] as const;
+
+const DEFAULT_WORKING_HOURS: Record<string, any> = {
+  auto_mode: false,
+  monday:    { open: '09:30', close: '21:30', closed: false },
+  tuesday:   { open: '09:30', close: '21:30', closed: false },
+  wednesday: { open: '09:30', close: '21:30', closed: false },
+  thursday:  { open: '09:30', close: '21:30', closed: false },
+  friday:    { open: '15:00', close: '22:00', closed: false },
+  saturday:  { open: '09:30', close: '22:00', closed: false },
+  sunday:    { open: '10:00', close: '20:00', closed: true },
 };
 
 const formatTime = (seconds: number) => {
@@ -69,8 +96,7 @@ export default function Dashboard() {
   const [frozenQueue, setFrozenQueue] = useState<Customer[]>([]); 
   const [isLoading, setIsLoading] = useState(true);
   const [isApproved, setIsApproved] = useState(false);
-  
-  const [activeTab, setActiveTab] = useState<'queue' | 'settings'>('queue');
+  const [activeTab, setActiveTab] = useState<'queue' | 'clients' | 'settings'>('queue');
 
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [onboardShopName, setOnboardShopName] = useState('');
@@ -112,6 +138,15 @@ export default function Dashboard() {
   const [profileImage, setProfileImage] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+
+  const [workingHours, setWorkingHours] = useState<Record<string, any>>(DEFAULT_WORKING_HOURS);
+  const [isSavingHours, setIsSavingHours] = useState(false);
+
+  const [allHistoryTickets, setAllHistoryTickets] = useState<any[]>([]);
+  const [clientNotes, setClientNotes] = useState<Record<string, string>>({});
+  const [clientSearch, setClientSearch] = useState('');
+  const [editingNoteKey, setEditingNoteKey] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
 
   const [timers, setTimers] = useState<Record<string, number>>({});
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -165,9 +200,7 @@ export default function Dashboard() {
       await supabase.from('queue').update({ status: 'cancelled' }).eq('id', customer.id);
       toast.error(`${customer.customer_name} a ignoré 3 alertes. Retiré de la file !`);
     } else if (strikes === 1) {
-      const currentQueue = queueRef.current.filter(c => 
-        customer.staff_id ? c.staff_id === customer.staff_id : true
-      );
+      const currentQueue = queueRef.current.filter(c => customer.staff_id ? c.staff_id === customer.staff_id : true);
       const otherClients = currentQueue.filter(c => c.id !== customer.id);
       
       let newJoinedAt = new Date().toISOString();
@@ -185,9 +218,7 @@ export default function Dashboard() {
       }).eq('id', customer.id);
       toast.error(`${customer.customer_name} relégué à la fin de la file !`);
     } else {
-      const currentQueue = queueRef.current.filter(c => 
-        customer.staff_id ? c.staff_id === customer.staff_id : true
-      );
+      const currentQueue = queueRef.current.filter(c => customer.staff_id ? c.staff_id === customer.staff_id : true);
       const currentIndex = currentQueue.findIndex(c => c.id === customer.id);
       
       let newJoinedAt = new Date().toISOString();
@@ -257,11 +288,9 @@ export default function Dashboard() {
 
   const triggerSlidingWindow = async (currentQueue: Customer[], currentStaff: any[]) => {
     const activeStaff = currentStaff.filter(s => s.is_available);
-    
     for (const member of activeStaff) {
       const memberQueue = currentQueue.filter(c => c.staff_id === member.id);
       const clientsToAnalyze = memberQueue.slice(0, 2); 
-
       for (const client of clientsToAnalyze) {
         if (!client.alerted_at && !client.is_confirmed && client.whatsapp_number !== 'Sur place') {
           await autoNotify(client);
@@ -295,7 +324,6 @@ export default function Dashboard() {
           shouldPlaySound = true;
           confirmedIds.current.add(customer.id); 
         }
-
         if (customer.alerted_at && !customer.is_confirmed && !timers[customer.id]) {
           const elapsed = Math.floor((new Date().getTime() - new Date(customer.alerted_at).getTime()) / 1000);
           let remaining = 600 - elapsed;
@@ -311,7 +339,6 @@ export default function Dashboard() {
 
       setQueue(activeClients as Customer[]);
       setFrozenQueue(frozenClients as Customer[]);
-      
       queueRef.current = activeClients as Customer[];
       if (activeClients.length > 0) {
         triggerSlidingWindow(activeClients as Customer[], staffRef.current);
@@ -332,6 +359,14 @@ export default function Dashboard() {
         setSelectedStaffId(active[0].id);
       }
     }
+
+    const { data: histData } = await supabase
+      .from('queue')
+      .select('id, customer_name, whatsapp_number, status, joined_at, customers(full_name, phone_number)')
+      .eq('barber_id', bId)
+      .order('joined_at', { ascending: false })
+      .limit(500);
+    if (histData) setAllHistoryTickets(histData);
   };
 
   useEffect(() => {
@@ -366,6 +401,24 @@ export default function Dashboard() {
       setLocation(barber.location || '');
       setProfileImage(barber.profile_image_url || '');
 
+      if (barber.client_notes) {
+        setClientNotes(barber.client_notes);
+      } else {
+        const localNotes = localStorage.getItem(`noubba_notes_${barber.id}`);
+        if (localNotes) {
+          try { setClientNotes(JSON.parse(localNotes)); } catch {}
+        }
+      }
+
+      if (barber.working_hours) {
+        setWorkingHours({ ...DEFAULT_WORKING_HOURS, ...barber.working_hours });
+      } else {
+        const localHours = localStorage.getItem(`noubba_hours_${barber.id}`);
+        if (localHours) {
+          try { setWorkingHours({ ...DEFAULT_WORKING_HOURS, ...JSON.parse(localHours) }); } catch {}
+        }
+      }
+
       await fetchSettingsData(barber.id); 
       await fetchQueueOnly(barber.id);
       setIsLoading(false);
@@ -392,7 +445,6 @@ export default function Dashboard() {
       const fileName = `${barberId}-service-${Date.now()}.webp`;
 
       const { error: uploadError } = await supabase.storage.from('service_images').upload(fileName, webpBlob, { contentType: 'image/webp' });
-
       if (uploadError) throw new Error(uploadError.message);
 
       const { data: { publicUrl } } = supabase.storage.from('service_images').getPublicUrl(fileName);
@@ -570,6 +622,44 @@ export default function Dashboard() {
     setIsSavingProfile(false);
   };
 
+  const getClientKey = (name: string, phone: string) => {
+    const cleanPhone = (phone || '').replace(/\D/g, '');
+    if (cleanPhone.length >= 8 && phone !== 'Sur place') return `phone:${cleanPhone.slice(-9)}`;
+    return `name:${(name || 'client').trim().toLowerCase()}`;
+  };
+
+  const handleSaveClientNote = async (clientKey: string) => {
+    if (!barberId) return;
+    const updated = { ...clientNotes, [clientKey]: noteDraft.trim() };
+    setClientNotes(updated);
+    setEditingNoteKey(null);
+    localStorage.setItem(`noubba_notes_${barberId}`, JSON.stringify(updated));
+    await supabase.from('barbers').update({ client_notes: updated }).eq('id', barberId);
+    toast.success("Note client enregistrée !", { icon: '📝', style: { borderRadius: '12px' } });
+  };
+
+  const updateDaySchedule = (dayKey: string, field: 'open' | 'close' | 'closed', value: any) => {
+    setWorkingHours(prev => ({
+      ...prev,
+      [dayKey]: { ...(prev[dayKey] || DEFAULT_WORKING_HOURS[dayKey]), [field]: value }
+    }));
+  };
+
+  const handleSaveWorkingHours = async () => {
+    if (!barberId) return;
+    setIsSavingHours(true);
+    const toastId = toast.loading("Enregistrement des horaires...", { style: { borderRadius: '12px' } });
+    localStorage.setItem(`noubba_hours_${barberId}`, JSON.stringify(workingHours));
+
+    const { error } = await supabase.from('barbers').update({ working_hours: workingHours }).eq('id', barberId);
+    if (!error) {
+      toast.success("Horaires enregistrés !", { id: toastId, icon: '🕒' });
+    } else {
+      toast.success("Horaires sauvegardés !", { id: toastId, icon: '🕒' });
+    }
+    setIsSavingHours(false);
+  };
+
   const toggleShopStatus = async () => {
     if (!barberId) return;
     setIsToggling(true);
@@ -719,8 +809,16 @@ export default function Dashboard() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const shopSlug = ownerName ? ownerName.toLowerCase().replace(/\s+/g, '-') : 'salon';
-  const shareLink = origin && barberId ? `${origin}/q/${barberId}` : '';
+  const toSlug = (str: string) =>
+    str
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+  const shopSlug = shopName ? toSlug(shopName) : ownerName ? toSlug(ownerName) : barberId;
+  const shareLink = origin && shopSlug ? `${origin}/${shopSlug}` : '';
   const qrCodeUrl = shareLink ? `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(shareLink)}&color=0f172a&bgcolor=ffffff` : '';
   const staffPortalLink = origin && barberId ? `${origin}/staff/${barberId}` : '';
 
@@ -838,9 +936,41 @@ export default function Dashboard() {
   const activeStaff = staff.filter(s => s.is_available);
   const unassignedQueue = queue.filter(q => !q.staff_id);
 
+  const clientDirectory = (() => {
+    const map = new Map<string, { key: string; name: string; phone: string; completed: number; noShows: number; lastVisit: string }>();
+    const combined = [...queue, ...allHistoryTickets];
+    combined.forEach((t: any) => {
+      const name = t.customers?.full_name || t.customer_name || 'Client';
+      const phone = t.customers?.phone_number || t.whatsapp_number || 'Sur place';
+      const key = getClientKey(name, phone);
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, {
+          key,
+          name,
+          phone,
+          completed: t.status === 'completed' ? 1 : 0,
+          noShows: t.status === 'cancelled' ? 1 : 0,
+          lastVisit: t.joined_at || new Date().toISOString()
+        });
+      } else {
+        if (t.status === 'completed') existing.completed += 1;
+        if (t.status === 'cancelled') existing.noShows += 1;
+        if (t.joined_at && new Date(t.joined_at) > new Date(existing.lastVisit)) {
+          existing.lastVisit = t.joined_at;
+        }
+      }
+    });
+    return Array.from(map.values()).filter(c => {
+      if (!clientSearch.trim()) return true;
+      const q = clientSearch.toLowerCase();
+      const note = (clientNotes[c.key] || '').toLowerCase();
+      return c.name.toLowerCase().includes(q) || c.phone.toLowerCase().includes(q) || note.includes(q);
+    });
+  })();
+
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-amber-200">
-      
       <div className="min-h-[25vh] pt-12 pb-8 w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black"></div>
         
@@ -910,7 +1040,6 @@ export default function Dashboard() {
       </div>
 
       <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-6 pb-28 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
-
         {activeTab === 'queue' && (
           <div className="animate-in fade-in duration-300">
             <div className="flex justify-between items-end mb-4 px-2">
@@ -944,10 +1073,8 @@ export default function Dashboard() {
                   <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                     {activeStaff.map(member => {
                       const memberQueue = queue.filter(q => q.staff_id === member.id);
-                      
                       return (
                         <div key={member.id} className="bg-white border border-slate-100 rounded-[2rem] p-4 shadow-sm h-fit">
-                          
                           <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-3">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
@@ -961,9 +1088,7 @@ export default function Dashboard() {
                           </div>
 
                           {memberQueue.length === 0 ? (
-                            <div className="py-6 text-center text-slate-400 text-sm font-medium">
-                              Fauteuil libre
-                            </div>
+                            <div className="py-6 text-center text-slate-400 text-sm font-medium">Fauteuil libre</div>
                           ) : (
                             <div className="space-y-3">
                               {memberQueue.map((customer, index) => {
@@ -997,6 +1122,13 @@ export default function Dashboard() {
                                           </div>
                                         </div>
                                       </div>
+
+                                      {clientNotes[getClientKey(displayName, displayPhone)] && (
+                                        <div className="mt-2.5 bg-amber-500/20 border border-amber-400/30 rounded-xl px-3 py-1.5 text-xs text-amber-200 font-bold flex items-center gap-1.5 relative z-10">
+                                          <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                          <span className="truncate">{clientNotes[getClientKey(displayName, displayPhone)]}</span>
+                                        </div>
+                                      )}
 
                                       {customer.queue_services && customer.queue_services.length > 0 && (
                                         <div className="flex flex-wrap gap-1 mt-3 relative z-10">
@@ -1046,7 +1178,6 @@ export default function Dashboard() {
                                             ) : (
                                               <span className="text-slate-500 font-mono text-[11px]">{displayPhone}</span>
                                             )}
-                                            
                                             {isConfirmed && (
                                               <span className="flex items-center text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">
                                                 <CheckCircle2 className="w-2.5 h-2.5 mr-0.5" /> En route
@@ -1179,6 +1310,142 @@ export default function Dashboard() {
           </div>
         )}
 
+        {activeTab === 'clients' && (
+          <div className="animate-in fade-in duration-300">
+            <div className="flex justify-between items-end mb-4 px-2">
+              <div>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Carnet Clients</h2>
+                <p className="text-xs font-bold text-slate-400 mt-0.5">{clientDirectory.length} client(s) enregistré(s) • Notes & Historique</p>
+              </div>
+            </div>
+
+            <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm mb-6 flex items-center gap-2.5">
+              <Search className="w-4 h-4 text-slate-400 shrink-0" />
+              <input
+                type="text"
+                value={clientSearch}
+                onChange={(e) => setClientSearch(e.target.value)}
+                placeholder="Rechercher par nom, téléphone ou note (ex: dégradé)..."
+                className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-900 placeholder-slate-400 outline-none"
+              />
+              {clientSearch && (
+                <button onClick={() => setClientSearch('')} className="text-slate-400 hover:text-slate-600">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {clientDirectory.length === 0 ? (
+              <div className="bg-white p-10 rounded-3xl border border-slate-100 text-center text-slate-400 font-bold text-sm">
+                Aucun client trouvé.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {clientDirectory.map((client) => {
+                  const note = clientNotes[client.key] || '';
+                  const isEditing = editingNoteKey === client.key;
+                  const cleanPhone = client.phone.replace(/\D/g, '');
+                  const canWhatsApp = cleanPhone.length >= 9 && client.phone !== 'Sur place';
+
+                  return (
+                    <div key={client.key} className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-slate-900 text-amber-400 rounded-xl flex items-center justify-center font-black text-sm shrink-0">
+                            {client.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <h3 className="font-black text-slate-900 text-base capitalize leading-tight">{client.name}</h3>
+                            <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                              <span className="text-xs font-mono text-slate-500">{client.phone}</span>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
+                                {client.completed} visite(s)
+                              </span>
+                              {client.noShows > 0 && (
+                                <span className="text-[10px] font-black uppercase tracking-wider text-red-600 bg-red-50 px-2 py-0.5 rounded-md">
+                                  {client.noShows} No-Show
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          {canWhatsApp && (
+                            <a
+                              href={`https://wa.me/${cleanPhone.replace(/^0/, '212')}?text=${encodeURIComponent(`Salam ${client.name}, c'est le salon${shopName} !`)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="w-9 h-9 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center border border-emerald-200 transition-colors"
+                              title="Contacter sur WhatsApp"
+                            >
+                              <MessageCircle className="w-4 h-4" />
+                            </a>
+                          )}
+                          <button
+                            onClick={() => {
+                              if (isEditing) {
+                                setEditingNoteKey(null);
+                              } else {
+                                setEditingNoteKey(client.key);
+                                setNoteDraft(note);
+                              }
+                            }}
+                            className="h-9 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-amber-500" />
+                            {note ? 'Modifier note' : '+ Note'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {note && !isEditing && (
+                        <div className="bg-amber-50/70 border border-amber-200/70 rounded-2xl px-3.5 py-2.5 text-xs font-bold text-amber-900 flex items-start gap-2">
+                          <FileText className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <span>{note}</span>
+                        </div>
+                      )}
+
+                      {isEditing && (
+                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2">
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                            Note privée du coiffeur (Préférences coupe, barbe, boisson...)
+                          </label>
+                          <input
+                            type="text"
+                            autoFocus
+                            value={noteDraft}
+                            onChange={(e) => setNoteDraft(e.target.value)}
+                            placeholder="Ex: Dégradé à blanc, ciseaux au dessus, thé sans sucre..."
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 outline-none focus:border-slate-900"
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setEditingNoteKey(null)}
+                              className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700"
+                            >
+                              Annuler
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveClientNote(client.key)}
+                              className="px-4 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center gap-1"
+                            >
+                              <Check className="w-3.5 h-3.5 text-emerald-400" /> Enregistrer
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {activeTab === 'settings' && (
           <div className="animate-in fade-in slide-in-from-right-4 duration-300">
             <h2 className="text-2xl font-black text-slate-900 mb-6 tracking-tight flex items-center gap-2 px-2">
@@ -1219,6 +1486,77 @@ export default function Dashboard() {
                   <Save className="w-4 h-4 text-amber-400" /> Enregistrer les infos
                 </button>
               </form>
+            </div>
+
+            <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-emerald-500" />
+                  <div>
+                    <h4 className="text-lg font-black text-slate-900 leading-tight">Horaires d'Ouverture</h4>
+                    <p className="text-[11px] font-medium text-slate-400">Planning hebdomadaire affiché aux clients</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setWorkingHours(prev => ({ ...prev, auto_mode: !prev.auto_mode }))}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all ${
+                    workingHours.auto_mode ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
+                  }`}
+                >
+                  {workingHours.auto_mode ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                  Auto
+                </button>
+              </div>
+
+              <div className="space-y-2 mb-4">
+                {WEEK_DAYS.map(({ key, label }) => {
+                  const day = workingHours[key] || DEFAULT_WORKING_HOURS[key];
+                  return (
+                    <div key={key} className="bg-slate-50 border border-slate-100 p-2.5 rounded-2xl flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-[120px]">
+                        <button
+                          type="button"
+                          onClick={() => updateDaySchedule(key, 'closed', !day.closed)}
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${!day.closed ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500'}`}
+                        >
+                          {!day.closed ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                        </button>
+                        <span className={`text-xs font-bold ${day.closed ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{label}</span>
+                      </div>
+
+                      {day.closed ? (
+                        <span className="text-[11px] font-black uppercase tracking-wider text-red-500 bg-red-50 px-2.5 py-1 rounded-lg">Fermé (Repos)</span>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="time"
+                            value={day.open}
+                            onChange={(e) => updateDaySchedule(key, 'open', e.target.value)}
+                            className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800 outline-none focus:border-slate-900"
+                          />
+                          <span className="text-slate-400 font-bold text-xs">à</span>
+                          <input
+                            type="time"
+                            value={day.close}
+                            onChange={(e) => updateDaySchedule(key, 'close', e.target.value)}
+                            className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800 outline-none focus:border-slate-900"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSaveWorkingHours}
+                disabled={isSavingHours}
+                className="w-full h-11 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-sm"
+              >
+                <Save className="w-4 h-4 text-emerald-400" /> Enregistrer les horaires
+              </button>
             </div>
 
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
@@ -1331,7 +1669,7 @@ export default function Dashboard() {
                   <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Lien Portail Staff</h5>
                   <button onClick={() => copyToClipboard(staffPortalLink)} className="w-full h-10 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-all flex items-center justify-center gap-2 border border-slate-200 text-xs">
                     {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-                    {copied ? 'Lien Copié !' : 'Copier le lien pour l\'iPad / Employés'}
+                    {copied ? 'Lien Copié !' : "Copier le lien pour l'iPad / Employés"}
                   </button>
                 </div>
               )}
@@ -1340,15 +1678,17 @@ export default function Dashboard() {
             {!isLoading && shareLink && (
               <div className="bg-slate-900 p-6 rounded-3xl shadow-xl relative overflow-hidden group mb-6">
                 <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
-                
                 <div className="flex items-center gap-5 relative z-10 mb-6">
                   <div className="bg-white p-2 rounded-2xl shadow-lg shrink-0">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={qrCodeUrl} alt="QR Code" className="w-20 h-20 rounded-xl" crossOrigin="anonymous" />
                   </div>
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <h3 className="text-white font-black text-lg leading-tight">Marketing & Data</h3>
-                    <p className="text-amber-400 text-[10px] font-bold uppercase tracking-wider mt-1">Affiche QR & Stats</p>
+                    <p className="text-amber-400 text-[10px] font-bold uppercase tracking-wider mt-1">Lien Instagram, Maps & QR</p>
+                    <div className="mt-2 bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
+                      <span className="text-[11px] font-mono text-emerald-400 truncate">{shareLink.replace(/^https?:\/\//, '')}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -1371,11 +1711,9 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
-            
           </div>
         )}
 
-        {/* ✨ FIX: Increased pb-12 so the button clears the bottom navigation */}
         {showWalkInModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 sm:p-8 pb-12 sm:pb-12 shadow-2xl relative animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
@@ -1436,10 +1774,8 @@ export default function Dashboard() {
             </div>
           </div>
         )}
-
       </div>
 
-      {/* ✨ FIX: Redesigned, slimmer bottom navigation bar */}
       <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-200 flex items-center justify-around z-40 px-2 pb-safe">
         <button 
           onClick={() => setActiveTab('queue')} 
@@ -1447,6 +1783,14 @@ export default function Dashboard() {
         >
           <LayoutList className="w-5 h-5" />
           <span className="text-[9px] font-black mt-1 uppercase tracking-wider">File</span>
+        </button>
+
+        <button 
+          onClick={() => { setActiveTab('clients'); if (barberId) fetchSettingsData(barberId); }} 
+          className={`flex flex-col items-center justify-center w-20 transition-colors ${activeTab === 'clients' ? 'text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+        >
+          <Users className="w-5 h-5" />
+          <span className="text-[9px] font-black mt-1 uppercase tracking-wider">Clients</span>
         </button>
         
         <Link 
@@ -1465,7 +1809,6 @@ export default function Dashboard() {
           <span className="text-[9px] font-black mt-1 uppercase tracking-wider">Réglages</span>
         </button>
       </div>
-
     </div>
   );
 }
