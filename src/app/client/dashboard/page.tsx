@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { LogOut, Scissors, MapPin, Timer, CheckCircle2, AlertCircle, X, Store, QrCode, Camera, Clock, Star, Award, User, Snowflake, Globe } from 'lucide-react';
+import { LogOut, Scissors, MapPin, Timer, CheckCircle2, AlertCircle, X, Store, QrCode, Camera, Clock, Star, Award, User, Snowflake, Globe, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 
 const translations = {
@@ -58,6 +58,10 @@ const translations = {
     phoneNumber: "Numéro de téléphone",
     phonePlaceholder: "06 00 00 00 00",
     saveDetailsBtn: "Enregistrer mes infos",
+    liveSynced: "En direct • File synchronisée",
+    reconnecting: "Connexion faible... Reconnexion",
+    syncBtn: "Actualiser",
+    justNow: "À l'instant",
     savingDetails: "Enregistrement du profil...",
     detailsUpdated: "Profil mis à jour !",
     networkError: "Erreur réseau.",
@@ -115,6 +119,10 @@ const translations = {
     phoneNumber: "Phone Number",
     phonePlaceholder: "06 00 00 00 00",
     saveDetailsBtn: "Save My Details",
+    liveSynced: "Live • Queue Synced",
+    reconnecting: "Weak connection... Reconnecting",
+    syncBtn: "Refresh",
+    justNow: "Just now",
     savingDetails: "Saving your profile...",
     detailsUpdated: "Profile updated!",
     networkError: "Network error.",
@@ -166,6 +174,10 @@ export default function ClientDashboard() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [profilePhone, setProfilePhone] = useState('');
+  const [isOnline, setIsOnline] = useState(true);
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
+  const [lastSyncLabel, setLastSyncLabel] = useState("À l'instant");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -181,6 +193,38 @@ export default function ClientDashboard() {
     }
   }, []);
 
+  useEffect(() => {
+    const handleOnline = () => { setIsOnline(true); fetchDashboardData(); };
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const diffSec = Math.floor((new Date().getTime() - lastSyncTime.getTime()) / 1000);
+      if (diffSec < 15) {
+        setLastSyncLabel(lang === 'fr' ? "À l'instant" : "Just now");
+      } else if (diffSec < 60) {
+        setLastSyncLabel(`${diffSec}s`);
+      } else {
+        const diffMin = Math.floor(diffSec / 60);
+        setLastSyncLabel(`${diffMin}m`);
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [lastSyncTime, lang]);
+
+  const handleManualRefresh = async () => {
+    setIsManualRefreshing(true);
+    await fetchDashboardData();
+    setTimeout(() => setIsManualRefreshing(false), 600);
+  };
+
   const toggleLanguage = () => {
     const nextLang = lang === 'fr' ? 'en' : 'fr';
     setLang(nextLang);
@@ -188,46 +232,76 @@ export default function ClientDashboard() {
   };
 
   const fetchDashboardData = async () => {
+    // 1. Identify active ticket from URL or device localStorage
+    let guestTicketId: string | null = null;
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      guestTicketId = urlParams.get('id') || localStorage.getItem('noubba_ticket_id');
+    }
+
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      router.push('/client/login');
-      return;
-    }
-    setUser(session.user);
-
-    const { data: customer } = await supabase.from('customers').select('*').eq('id', session.user.id).maybeSingle();
-    if (customer) {
-      setCustomerName(customer.full_name);
-      setProfileName(customer.full_name || '');
-      setProfilePhone(customer.phone_number || '');
-    } else {
-      const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
-      if (metaName) {
-        setProfileName(metaName);
-        setCustomerName(metaName);
+    if (session) {
+      setUser(session.user);
+      const { data: customer } = await supabase.from('customers').select('*').eq('id', session.user.id).maybeSingle();
+      if (customer) {
+        setCustomerName(customer.full_name);
+        setProfileName(customer.full_name || '');
+        setProfilePhone(customer.phone_number || '');
+      } else {
+        const metaName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
+        if (metaName) {
+          setProfileName(metaName);
+          setCustomerName(metaName);
+        }
       }
-      setShowProfileModal(true);
     }
 
-    const { data: queueDataArray, error: queueError } = await supabase
-      .from('queue')
-      .select(`
-        *,
-        staff (name),
-        queue_services(
-          services(service_name, duration_minutes, price_dh)
-        )
-      `)
-      .eq('customer_id', session.user.id)
-      .in('status', ['waiting', 'frozen'])
-      .order('joined_at', { ascending: false })
-      .limit(1);
+    // 2. Fetch ticket by ID or customer_id
+    let queueData: any = null;
 
-    if (queueError) console.error("Dashboard Queue Fetch Error:", queueError);
+    if (guestTicketId) {
+      const { data: ticketById } = await supabase
+        .from('queue')
+        .select(`
+          *,
+          staff (name),
+          queue_services(
+            services(service_name, duration_minutes, price_dh)
+          )
+        `)
+        .eq('id', guestTicketId)
+        .maybeSingle();
 
-    const queueData = queueDataArray?.[0] || null;
+      if (ticketById) {
+        queueData = ticketById;
+      }
+    }
 
-    if (queueData) {
+    if (!queueData && session) {
+      const { data: queueDataArray } = await supabase
+        .from('queue')
+        .select(`
+          *,
+          staff (name),
+          queue_services(
+            services(service_name, duration_minutes, price_dh)
+          )
+        `)
+        .eq('customer_id', session.user.id)
+        .in('status', ['waiting', 'frozen'])
+        .order('joined_at', { ascending: false })
+        .limit(1);
+
+      queueData = queueDataArray?.[0] || null;
+    }
+
+    if (queueData && (queueData.status === 'waiting' || queueData.status === 'frozen')) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('noubba_ticket_id', queueData.id);
+      }
+      setCustomerName(queueData.customer_name);
+      setProfileName(queueData.customer_name);
+      setProfilePhone(queueData.whatsapp_number);
       setUnreviewedTicket(null);
 
       const { data: barberData } = await supabase
@@ -263,52 +337,65 @@ export default function ClientDashboard() {
       }
 
     } else {
+      if (queueData?.status === 'completed' || queueData?.status === 'cancelled') {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('noubba_ticket_id');
+        }
+      }
       setActiveQueue(null);
       setPosition(0);
       setClientTimeRemaining(0);
 
-      const { data: lastTicket } = await supabase
-        .from('queue')
-        .select(`
-          id,
-          barber_id,
-          review_left,
-          barbers (id, shop_name, location, profile_image_url)
-        `)
-        .eq('customer_id', session.user.id)
-        .eq('status', 'completed')
-        .order('joined_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (lastTicket && !lastTicket.review_left) {
-        setUnreviewedTicket(lastTicket);
-      } else {
-        setUnreviewedTicket(null);
-      }
-
-      const { data: pastTickets } = await supabase
-        .from('queue')
-        .select('barber_id, barbers(id, shop_name, location, profile_image_url)')
-        .eq('customer_id', session.user.id)
-        .eq('status', 'completed')
-        .order('joined_at', { ascending: false })
-        .limit(1);
-
-      if (pastTickets && pastTickets.length > 0 && pastTickets[0].barbers) {
-        setRecentBarber(pastTickets[0].barbers);
-
-        const { data: loyaltyData } = await supabase
-          .from('shop_loyalty')
-          .select('*')
+      if (queueData?.status === 'completed' && !queueData.review_left) {
+        setUnreviewedTicket(queueData);
+      } else if (session) {
+        const { data: lastTicket } = await supabase
+          .from('queue')
+          .select(`
+            id,
+            barber_id,
+            review_left,
+            barbers (id, shop_name, location, profile_image_url)
+          `)
           .eq('customer_id', session.user.id)
-          .eq('barber_id', pastTickets[0].barber_id)
+          .eq('status', 'completed')
+          .order('joined_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
 
-        setLoyaltyPoints(loyaltyData?.points_balance || loyaltyData?.points || 0);
+        if (lastTicket && !lastTicket.review_left) {
+          setUnreviewedTicket(lastTicket);
+        } else {
+          setUnreviewedTicket(null);
+        }
+      }
+
+      if (session) {
+        const { data: pastTickets } = await supabase
+          .from('queue')
+          .select('barber_id, barbers(id, shop_name, location, profile_image_url)')
+          .eq('customer_id', session.user.id)
+          .eq('status', 'completed')
+          .order('joined_at', { ascending: false })
+          .limit(1);
+
+        if (pastTickets && pastTickets.length > 0 && pastTickets[0].barbers) {
+          setRecentBarber(pastTickets[0].barbers);
+
+          const { data: loyaltyData } = await supabase
+            .from('shop_loyalty')
+            .select('*')
+            .eq('customer_id', session.user.id)
+            .eq('barber_id', pastTickets[0].barber_id)
+            .maybeSingle();
+
+          setLoyaltyPoints(loyaltyData?.points_balance || loyaltyData?.points || 0);
+        }
       }
     }
 
+    setLastSyncTime(new Date());
+    setLastSyncLabel(lang === 'fr' ? "À l'instant" : "Just now");
     setIsLoading(false);
   };
 
@@ -379,26 +466,28 @@ export default function ClientDashboard() {
       .update({ rating: ratingValue, review_left: true })
       .eq('id', unreviewedTicket.id);
 
-    const { data: loyaltyData } = await supabase
-      .from('shop_loyalty')
-      .select('*')
-      .eq('customer_id', user.id)
-      .eq('barber_id', unreviewedTicket.barber_id)
-      .maybeSingle();
+    if (user) {
+      const { data: loyaltyData } = await supabase
+        .from('shop_loyalty')
+        .select('*')
+        .eq('customer_id', user.id)
+        .eq('barber_id', unreviewedTicket.barber_id)
+        .maybeSingle();
 
-    if (loyaltyData) {
-      await supabase
-        .from('shop_loyalty')
-        .update({ points_balance: (loyaltyData.points_balance || 0) + 1, updated_at: new Date().toISOString() })
-        .eq('id', loyaltyData.id);
-    } else {
-      await supabase
-        .from('shop_loyalty')
-        .insert([{ 
-          customer_id: user.id, 
-          barber_id: unreviewedTicket.barber_id, 
-          points_balance: 1 
-        }]);
+      if (loyaltyData) {
+        await supabase
+          .from('shop_loyalty')
+          .update({ points_balance: (loyaltyData.points_balance || 0) + 1, updated_at: new Date().toISOString() })
+          .eq('id', loyaltyData.id);
+      } else {
+        await supabase
+          .from('shop_loyalty')
+          .insert([{ 
+            customer_id: user.id, 
+            barber_id: unreviewedTicket.barber_id, 
+            points_balance: 1 
+          }]);
+      }
     }
 
     toast.success(t.reviewSuccess, { id: toastId, duration: 4000, style: { borderRadius: '12px', background: '#10b981', color: '#fff' } });
@@ -560,6 +649,7 @@ export default function ClientDashboard() {
       .eq('id', activeQueue.id);
 
     if (!error) {
+      if (typeof window !== 'undefined') localStorage.removeItem('noubba_ticket_id');
       toast(t.leftQueueMsg, { icon: '👋' });
       setActiveQueue(null);
       fetchDashboardData();
@@ -796,6 +886,41 @@ export default function ClientDashboard() {
             <div className="bg-white rounded-[1.8rem] p-6 relative overflow-hidden">
               <div className="absolute -right-6 -top-6 opacity-[0.03] pointer-events-none">
                 <Scissors className="w-48 h-48" />
+              </div>
+
+              {/* LIVE SYNC & REFRESH INDICATOR */}
+              <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  {isOnline ? (
+                    <>
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                      </span>
+                      <span className="text-[11px] font-black uppercase tracking-wider text-emerald-600">
+                        {t.liveSynced}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <WifiOff className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                      <span className="text-[11px] font-black uppercase tracking-wider text-amber-600">
+                        {t.reconnecting}
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleManualRefresh}
+                  disabled={isManualRefreshing}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-bold active:scale-95 transition-all"
+                  title={t.syncBtn}
+                >
+                  <RefreshCw className={`w-3 h-3 text-slate-500 ${isManualRefreshing ? 'animate-spin text-blue-500' : ''}`} />
+                  <span className="font-mono">{lastSyncLabel}</span>
+                </button>
               </div>
 
               {activeQueue.alerted_at && !activeQueue.is_confirmed && (

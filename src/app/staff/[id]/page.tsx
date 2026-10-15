@@ -549,6 +549,26 @@ export default function StaffPortal() {
       </div>
 
       <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 pt-6 pb-12 shadow-[0_-10px_40px_rgba(0,0,0,0.15)] overflow-y-auto">
+        {!soundEnabled && (
+          <div className="mb-4 bg-amber-500/10 border border-amber-500/25 p-3 rounded-2xl flex items-center justify-between gap-3 shadow-sm animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
+                <VolumeX className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-black text-slate-900 leading-tight">Son d'alerte coupé sur ce fauteuil</p>
+                <p className="text-[10px] font-medium text-slate-500 truncate">Cliquez pour entendre le carillon à l'arrivée d'un client</p>
+              </div>
+            </div>
+            <button
+              onClick={toggleSound}
+              className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-amber-400 font-bold rounded-xl text-xs shrink-0 transition-transform active:scale-95 flex items-center gap-1 shadow-sm"
+            >
+              <Volume2 className="w-3.5 h-3.5" /> Activer
+            </button>
+          </div>
+        )}
+
         {queue.length === 0 ? (
           <div className="py-16 text-center text-slate-400 font-medium text-sm space-y-3">
             <div className="w-12 h-12 bg-slate-200 text-slate-400 rounded-2xl flex items-center justify-center mx-auto shadow-inner"><Scissors className="w-5 h-5" /></div>

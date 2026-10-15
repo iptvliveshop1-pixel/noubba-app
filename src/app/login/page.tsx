@@ -4,29 +4,43 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'react-hot-toast';
-import { Mail, Lock, ArrowRight, Scissors, ChevronLeft } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Scissors, ChevronLeft, Eye, EyeOff } from 'lucide-react';
+
+const ADMIN_EMAILS = ['zrirjawad@gmail.com', 'zrirsr@gmail.com'];
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email.trim() || !password) return;
+
     setIsLoading(true);
     const toastId = toast.loading("Connexion en cours...");
+    const cleanEmail = email.trim().toLowerCase();
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ 
+      email: cleanEmail, 
+      password 
+    });
 
     if (error) {
-      toast.error(error.message === 'Invalid login credentials' ? 'Email ou mot de passe incorrect' : error.message, { id: toastId });
+      toast.error(
+        error.message === 'Invalid login credentials' 
+          ? 'Email ou mot de passe incorrect.' 
+          : error.message, 
+        { id: toastId }
+      );
       setIsLoading(false);
     } else {
       toast.success("Bon retour !", { id: toastId });
       
-      // ✨ THE FIX: Check if it is the CEO logging in!
-      if (email.toLowerCase() === 'zrirjawad@gmail.com') {
+      // Check if CEO/Admin is logging in
+      if (ADMIN_EMAILS.includes(cleanEmail)) {
         router.push('/admin');
       } else {
         router.push('/dashboard');
@@ -77,15 +91,38 @@ export default function Login() {
             <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center shrink-0"><Mail className="w-5 h-5 text-slate-400" /></div>
             <div className="flex-1">
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Adresse Email</label>
-              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-900 placeholder-slate-300 focus:ring-0 outline-none" placeholder="contact@salon.com" />
+              <input 
+                type="email" 
+                required 
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)} 
+                className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-900 placeholder-slate-300 focus:ring-0 outline-none" 
+                placeholder="contact@salon.com" 
+              />
             </div>
           </div>
+          
           <div className="bg-white border border-slate-200 rounded-2xl p-4 focus-within:border-slate-900 focus-within:ring-1 focus-within:ring-slate-900 transition-all shadow-sm flex items-center gap-4 relative">
             <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center shrink-0"><Lock className="w-5 h-5 text-slate-400" /></div>
-            <div className="flex-1">
+            <div className="flex-1 pr-8">
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">Mot de passe</label>
-              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-900 placeholder-slate-300 focus:ring-0 outline-none" placeholder="••••••••" />
+              <input 
+                type={showPassword ? 'text' : 'password'} 
+                required 
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)} 
+                className="w-full bg-transparent border-none p-0 text-base font-bold text-slate-900 placeholder-slate-300 focus:ring-0 outline-none" 
+                placeholder="••••••••" 
+              />
             </div>
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+              tabIndex={-1}
+            >
+              {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            </button>
           </div>
           
           {/* FORGOT PASSWORD LINK */}

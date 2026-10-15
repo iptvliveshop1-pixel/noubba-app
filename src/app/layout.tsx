@@ -2,18 +2,21 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Toaster } from 'react-hot-toast'
-import { Analytics } from '@vercel/analytics/react' // 1. Added Analytics import
+import { Analytics } from '@vercel/analytics/react'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'Noubba | File d\'attente intelligente',
-  description: 'Le 1er système de file d\'attente intelligent au Maroc', // Updated description
+  description: 'Le 1er système de file d\'attente intelligent au Maroc',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
     title: 'Noubba',
+  },
+  other: {
+    google: 'notranslate',
   },
 }
 
@@ -30,15 +33,11 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="fr">
+    <html lang="fr" translate="no" className="notranslate">
       <body className={inter.className}>
         <Toaster position="top-center" />
         {children}
-        
-        {/* 2. Added Analytics component */}
         <Analytics />
-        
-        {/* ✨ MAGIC: Register the Service Worker for Native App Install */}
         <script
           dangerouslySetInnerHTML={{
             __html: `

@@ -546,6 +546,27 @@ export default function Dashboard() {
     }
   };
 
+  const handleQuickCreateOwnerStaff = async () => {
+    if (!barberId) return;
+    const toastId = toast.loading("Création de votre fauteuil...");
+    const { data, error } = await supabase.from('staff').insert([{
+      barber_id: barberId,
+      name: ownerName.trim() || 'Coiffeur Principal',
+      access_pin: '1234',
+      is_available: true
+    }]).select();
+
+    if (!error && data) {
+      setStaff(prev => [...prev, data[0]]);
+      staffRef.current = [...staffRef.current, data[0]];
+      setSelectedStaffId(data[0].id);
+      toast.success(`Fauteuil activé pour ${data[0].name} ! PIN: 1234`, { id: toastId, icon: '✂️' });
+      fetchQueueOnly(barberId);
+    } else {
+      toast.error("Erreur de création du fauteuil.", { id: toastId });
+    }
+  };
+
   const handleDeleteStaff = async (id: string) => {
     const confirm = window.confirm("Supprimer ce membre de l'équipe ?");
     if (!confirm) return;
@@ -567,18 +588,25 @@ export default function Dashboard() {
     setIsOnboarding(true);
     const toastId = toast.loading("Création de votre salon...");
 
-    const { error } = await supabase.from('barbers').insert([{
+    const { data: newBarber, error } = await supabase.from('barbers').insert([{
       user_id: userId,
       shop_name: onboardShopName,
       owner_name: onboardOwnerName,
       approval_status: 'pending'
-    }]);
+    }]).select().single();
 
     if (error) {
       toast.error("Erreur lors de la création.", { id: toastId });
-    } else {
+    } else if (newBarber) {
+      await supabase.from('staff').insert([{
+        barber_id: newBarber.id,
+        name: onboardOwnerName.trim() || 'Coiffeur Principal',
+        access_pin: '1234',
+        is_available: true
+      }]);
       toast.success("Profil complété !", { id: toastId });
       setNeedsOnboarding(false);
+      window.location.reload();
     }
     setIsOnboarding(false);
   };
@@ -1049,6 +1077,28 @@ export default function Dashboard() {
               </div>
             </div>
 
+            {/* AUDIO AWAKENING BANNER */}
+            {!soundEnabled && (
+              <div className="mb-4 bg-gradient-to-r from-amber-500/15 via-amber-400/10 to-transparent border border-amber-500/30 p-3.5 rounded-2xl flex items-center justify-between gap-3 shadow-sm animate-in fade-in slide-in-from-top-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-900 flex items-center justify-center shrink-0 shadow-sm shadow-amber-500/20">
+                    <VolumeX className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-black text-slate-900 leading-tight">Notifications sonores désactivées</p>
+                    <p className="text-[11px] font-medium text-slate-500 truncate">Activez le son pour entendre le carillon du salon à chaque arrivée</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleSound}
+                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 font-black rounded-xl text-xs shrink-0 transition-transform active:scale-95 flex items-center gap-1.5 shadow-sm"
+                >
+                  <Volume2 className="w-3.5 h-3.5" /> Activer le son
+                </button>
+              </div>
+            )}
+
             <button 
               onClick={() => setShowWalkInModal(true)}
               className="w-full h-12 bg-slate-900 active:bg-slate-800 text-white font-bold rounded-xl flex items-center justify-center gap-2 mb-8 shadow-md transition-transform active:scale-[0.98]"
@@ -1065,9 +1115,19 @@ export default function Dashboard() {
             ) : (
               <>
                 {activeStaff.length === 0 ? (
-                  <div className="bg-red-50 text-red-500 p-6 rounded-3xl font-bold text-center mb-6 border border-red-100">
-                    <UserX className="w-8 h-8 mx-auto mb-2 text-red-400" />
-                    Aucun coiffeur n'est actuellement disponible.<br/>Activez un membre de l'équipe dans les paramètres.
+                  <div className="bg-amber-50 text-amber-900 p-6 rounded-3xl font-bold text-center mb-6 border border-amber-200 shadow-sm space-y-3">
+                    <UserX className="w-8 h-8 mx-auto text-amber-500" />
+                    <div>
+                      <p className="text-base font-black">Aucun fauteuil actif pour le moment.</p>
+                      <p className="text-xs text-amber-700 font-medium mt-1">Activez votre premier fauteuil pour commencer à accueillir des clients.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleQuickCreateOwnerStaff}
+                      className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-xl text-xs inline-flex items-center gap-2 shadow-md transition-all active:scale-95"
+                    >
+                      <Plus className="w-4 h-4 text-emerald-400" /> Activer le fauteuil de {ownerName ? ownerName.split(' ')[0] : 'coiffeur'} (PIN: 1234)
+                    </button>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -1310,6 +1370,7 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* CARNET CLIENTS TAB */}
         {activeTab === 'clients' && (
           <div className="animate-in fade-in duration-300">
             <div className="flex justify-between items-end mb-4 px-2">
@@ -1446,12 +1507,14 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* SETTINGS TAB */}
         {activeTab === 'settings' && (
           <div className="animate-in fade-in slide-in-from-right-4 duration-300">
             <h2 className="text-2xl font-black text-slate-900 mb-6 tracking-tight flex items-center gap-2 px-2">
               <Settings className="w-6 h-6 text-slate-400" /> Paramètres
             </h2>
 
+            {/* SHOP IDENTITY */}
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
               <div className="flex items-center gap-2 mb-4">
                 <Store className="w-5 h-5 text-blue-500" />
@@ -1488,6 +1551,7 @@ export default function Dashboard() {
               </form>
             </div>
 
+            {/* WEEKLY OPENING HOURS */}
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -1559,6 +1623,7 @@ export default function Dashboard() {
               </button>
             </div>
 
+            {/* SERVICES SETUP */}
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
               <div className="flex items-center gap-2 mb-4">
                 <Scissors className="w-5 h-5 text-amber-500" />
@@ -1619,6 +1684,7 @@ export default function Dashboard() {
               </div>
             </div>
 
+            {/* TEAM & STAFF ACCREDITATION */}
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
               <div className="flex items-center gap-2 mb-4">
                 <User className="w-5 h-5 text-emerald-500" />
@@ -1675,6 +1741,7 @@ export default function Dashboard() {
               )}
             </div>
 
+            {/* MARKETING & QR CARD */}
             {!isLoading && shareLink && (
               <div className="bg-slate-900 p-6 rounded-3xl shadow-xl relative overflow-hidden group mb-6">
                 <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
@@ -1714,6 +1781,7 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* WALK-IN MODAL */}
         {showWalkInModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 sm:p-8 pb-12 sm:pb-12 shadow-2xl relative animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
@@ -1776,6 +1844,7 @@ export default function Dashboard() {
         )}
       </div>
 
+      {/* BOTTOM NAVIGATION BAR */}
       <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-200 flex items-center justify-around z-40 px-2 pb-safe">
         <button 
           onClick={() => setActiveTab('queue')} 

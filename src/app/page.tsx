@@ -8,7 +8,8 @@ import { toast } from 'react-hot-toast';
 
 const translations = {
   fr: {
-    clientSpace: "Espace Client",
+    clientSpace: "Suivre ma place / Scanner",
+    barberSpace: "Espace Coiffeur",
     login: "Connexion",
     heroTitlePrefix: "La nouvelle ère des salons de",
     heroTitleAccent: "coiffure.",
@@ -43,7 +44,8 @@ const translations = {
     footerText: "Conçu pour les salons et barbiers modernes."
   },
   en: {
-    clientSpace: "Client Portal",
+    clientSpace: "Track Turn / Scan QR",
+    barberSpace: "Barber Portal",
     login: "Log in",
     heroTitlePrefix: "The new digital era for",
     heroTitleAccent: "barbershops.",
@@ -155,33 +157,55 @@ export default function Home() {
 
   if (isCheckingAuth) {
     return (
-      <div className="min-h-[100dvh] bg-slate-900 flex items-center justify-center">
+      <div className="fixed inset-0 bg-slate-950 flex items-center justify-center">
         <div className="w-10 h-10 border-4 border-amber-500/30 border-t-amber-500 rounded-full animate-spin"></div>
       </div>
     );
   }
 
+  // Standalone PWA Screen — 100% full-screen dark with NO white bottom gap
   if (isStandaloneUnauth) {
     return (
-      <div className="min-h-[100dvh] bg-slate-900 flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
-        <div className="absolute top-0 right-0 w-[40rem] h-[40rem] bg-amber-500/10 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/3"></div>
-        <div className="absolute bottom-0 left-0 w-[40rem] h-[40rem] bg-blue-500/10 rounded-full blur-[120px] translate-y-1/3 -translate-x-1/3"></div>
+      <div className="fixed inset-0 bg-slate-950 flex flex-col justify-between p-6 overflow-y-auto font-sans text-white">
+        <div className="absolute top-0 right-0 w-[30rem] h-[30rem] bg-amber-500/10 rounded-full blur-[100px] pointer-events-none"></div>
+        <div className="absolute bottom-0 left-0 w-[30rem] h-[30rem] bg-blue-500/10 rounded-full blur-[100px] pointer-events-none"></div>
+
+        <div className="flex justify-end pt-2 relative z-10">
+          <button
+            onClick={toggleLanguage}
+            className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold backdrop-blur-md transition-all flex items-center gap-1.5"
+          >
+            <Globe className="w-3.5 h-3.5 text-amber-400" />
+            <span className="font-mono uppercase">{lang === 'fr' ? 'EN 🇬🇧' : 'FR 🇫🇷'}</span>
+          </button>
+        </div>
         
-        <div className="relative z-10 w-full max-w-sm text-center">
-          <div className="w-20 h-20 bg-gradient-to-br from-amber-400 to-amber-600 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/20 mx-auto mb-6">
-            <Scissors className="w-10 h-10 text-slate-900" />
+        <div className="relative z-10 w-full max-w-sm mx-auto text-center my-auto py-8">
+          <div className="w-20 h-20 bg-gradient-to-br from-amber-400 to-amber-600 rounded-3xl flex items-center justify-center shadow-xl shadow-amber-500/20 mx-auto mb-6">
+            <Scissors className="w-10 h-10 text-slate-950" />
           </div>
           <h1 className="text-3xl font-black text-white tracking-tight mb-2">Bienvenue sur Noubba</h1>
-          <p className="text-slate-400 font-medium mb-10">Veuillez choisir votre espace pour continuer.</p>
+          <p className="text-slate-400 font-medium text-sm mb-8">Choisissez votre espace pour continuer.</p>
 
           <div className="flex flex-col gap-4">
-            <Link href="/client/login" className="w-full h-16 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-3 text-lg">
-              <User className="w-6 h-6" /> {t.clientSpace}
+            <Link 
+              href="/client/dashboard" 
+              className="w-full h-16 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white font-black rounded-2xl transition-all shadow-xl shadow-blue-600/30 flex items-center justify-center gap-3 text-base"
+            >
+              <User className="w-5 h-5" /> {t.clientSpace}
             </Link>
-            <Link href="/login" className="w-full h-16 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl transition-all border border-white/10 flex items-center justify-center gap-3 text-lg">
-              <Store className="w-6 h-6 text-amber-400" /> Espace Coiffeur
+            
+            <Link 
+              href="/login" 
+              className="w-full h-16 bg-white/10 hover:bg-white/15 active:scale-[0.98] text-white font-bold rounded-2xl transition-all border border-white/10 flex items-center justify-center gap-3 text-base"
+            >
+              <Store className="w-5 h-5 text-amber-400" /> {t.barberSpace}
             </Link>
           </div>
+        </div>
+
+        <div className="relative z-10 text-center pb-4 text-xs text-slate-500">
+          © {new Date().getFullYear()} Noubba • {t.footerText}
         </div>
       </div>
     );
@@ -220,7 +244,7 @@ export default function Home() {
             <span className="font-mono uppercase">{lang === 'fr' ? 'EN 🇬🇧' : 'FR 🇫🇷'}</span>
           </button>
 
-          <Link href="/client/login" className="text-slate-300 hover:text-white font-bold text-xs sm:text-sm transition-colors whitespace-nowrap">
+          <Link href="/client/dashboard" className="text-slate-300 hover:text-white font-bold text-xs sm:text-sm transition-colors whitespace-nowrap">
             {t.clientSpace}
           </Link>
           <Link href="/login" className="px-4 py-2 sm:px-6 sm:py-2.5 text-xs sm:text-sm font-bold text-slate-900 bg-white hover:bg-slate-100 rounded-full transition-all shadow-lg active:scale-95 shrink-0">
