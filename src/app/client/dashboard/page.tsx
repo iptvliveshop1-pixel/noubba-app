@@ -504,6 +504,7 @@ export default function ClientDashboard() {
     fetchDashboardData();
   };
 
+  // Home / Back Button Handler: takes customer straight to home without requesting password
   const handleLogout = async () => {
     await supabase.auth.signOut();
     if (typeof window !== 'undefined') localStorage.removeItem('noubba_ticket_id');
@@ -658,6 +659,7 @@ export default function ClientDashboard() {
     setIsCanceling(false);
   };
 
+  // Universal QR Scanner: automatically converts any salon link or vanity slug into the direct queue
   const handleScanSuccess = async (result: any) => {
     if (!result) return;
     
@@ -674,14 +676,27 @@ export default function ClientDashboard() {
     if (!rawText) return;
     const clean = rawText.trim();
 
-    // Support ANY Noubba URL: vanity slug (noubba.com/barber-slug), /q/[id], or relative path
     let target = '';
-    if (clean.startsWith('http://') || clean.startsWith('https://')) {
+    try {
+      if (clean.startsWith('http://') || clean.startsWith('https://')) {
+        const parsed = new URL(clean);
+        const path = parsed.pathname;
+        if (path.startsWith('/q/')) {
+          target = clean;
+        } else if (path !== '/' && path.length > 1) {
+          const slug = path.replace(/^\//, '');
+          target = window.location.origin + '/q/' + slug;
+        } else {
+          target = clean;
+        }
+      } else if (clean.startsWith('/')) {
+        const slug = clean.replace(/^\//, '');
+        target = window.location.origin + '/q/' + slug;
+      } else if (clean.length > 0) {
+        target = window.location.origin + '/q/' + clean;
+      }
+    } catch {
       target = clean;
-    } else if (clean.startsWith('/')) {
-      target = window.location.origin + clean;
-    } else if (clean.length > 0) {
-      target = window.location.origin + '/' + clean;
     }
 
     if (target) {

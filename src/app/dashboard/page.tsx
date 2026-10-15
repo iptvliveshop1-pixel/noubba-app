@@ -4,13 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
-import { 
-  Bell, MessageCircle, Tv, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, 
-  UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, 
-  User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Plus, Trash2, 
-  ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon, KeyRound, Circle, 
-  Loader2, Volume2, VolumeX, Clock, Users, Search, FileText 
-} from 'lucide-react';
+import { Globe, Bell, MessageCircle, Tv, Coffee, LogOut, Copy, Check, UserX, CheckCircle2, UserPlus, X, Download, Power, MapPin, UploadCloud, Settings, Save, Store, User, ArrowRight, Timer, Scissors, Snowflake, BarChart3, Plus, Trash2, ToggleLeft, ToggleRight, LayoutList, Image as ImageIcon, KeyRound, Circle, Loader2, Volume2, VolumeX, Clock, Users, Search, FileText } from 'lucide-react';
 
 type Customer = {
   id: string;
@@ -41,7 +35,7 @@ const WEEK_DAYS = [
   { key: 'tuesday', label: 'Mardi' },
   { key: 'wednesday', label: 'Mercredi' },
   { key: 'thursday', label: 'Jeudi' },
-  { key: 'friday', label: "Vendredi (Jumu'ah)" },
+  { key: 'friday', label: 'Vendredi (Jumu\'ah)' },
   { key: 'saturday', label: 'Samedi' },
   { key: 'sunday', label: 'Dimanche' },
 ] as const;
@@ -96,6 +90,7 @@ export default function Dashboard() {
   const [frozenQueue, setFrozenQueue] = useState<Customer[]>([]); 
   const [isLoading, setIsLoading] = useState(true);
   const [isApproved, setIsApproved] = useState(false);
+  
   const [activeTab, setActiveTab] = useState<'queue' | 'clients' | 'settings'>('queue');
 
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
@@ -113,6 +108,19 @@ export default function Dashboard() {
   
   const [isOpen, setIsOpen] = useState<boolean>(true);
   const [isToggling, setIsToggling] = useState(false);
+  const [lang, setLang] = useState<'fr' | 'en'>('fr');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('noubba_lang');
+    if (saved === 'en' || saved === 'fr') setLang(saved);
+  }, []);
+
+  const toggleLanguage = () => {
+    const next = lang === 'fr' ? 'en' : 'fr';
+    setLang(next);
+    localStorage.setItem('noubba_lang', next);
+    toast.success(next === 'fr' ? 'Langue : Français 🇫🇷' : 'Language: English 🇬🇧', { duration: 2000, style: { borderRadius: '12px' } });
+  };
 
   const [showWalkInModal, setShowWalkInModal] = useState(false);
   const [walkInName, setWalkInName] = useState('');
@@ -138,10 +146,8 @@ export default function Dashboard() {
   const [profileImage, setProfileImage] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
-
   const [workingHours, setWorkingHours] = useState<Record<string, any>>(DEFAULT_WORKING_HOURS);
   const [isSavingHours, setIsSavingHours] = useState(false);
-
   const [allHistoryTickets, setAllHistoryTickets] = useState<any[]>([]);
   const [clientNotes, setClientNotes] = useState<Record<string, string>>({});
   const [clientSearch, setClientSearch] = useState('');
@@ -200,7 +206,9 @@ export default function Dashboard() {
       await supabase.from('queue').update({ status: 'cancelled' }).eq('id', customer.id);
       toast.error(`${customer.customer_name} a ignoré 3 alertes. Retiré de la file !`);
     } else if (strikes === 1) {
-      const currentQueue = queueRef.current.filter(c => customer.staff_id ? c.staff_id === customer.staff_id : true);
+      const currentQueue = queueRef.current.filter(c => 
+        customer.staff_id ? c.staff_id === customer.staff_id : true
+      );
       const otherClients = currentQueue.filter(c => c.id !== customer.id);
       
       let newJoinedAt = new Date().toISOString();
@@ -218,7 +226,9 @@ export default function Dashboard() {
       }).eq('id', customer.id);
       toast.error(`${customer.customer_name} relégué à la fin de la file !`);
     } else {
-      const currentQueue = queueRef.current.filter(c => customer.staff_id ? c.staff_id === customer.staff_id : true);
+      const currentQueue = queueRef.current.filter(c => 
+        customer.staff_id ? c.staff_id === customer.staff_id : true
+      );
       const currentIndex = currentQueue.findIndex(c => c.id === customer.id);
       
       let newJoinedAt = new Date().toISOString();
@@ -288,9 +298,11 @@ export default function Dashboard() {
 
   const triggerSlidingWindow = async (currentQueue: Customer[], currentStaff: any[]) => {
     const activeStaff = currentStaff.filter(s => s.is_available);
+    
     for (const member of activeStaff) {
       const memberQueue = currentQueue.filter(c => c.staff_id === member.id);
       const clientsToAnalyze = memberQueue.slice(0, 2); 
+
       for (const client of clientsToAnalyze) {
         if (!client.alerted_at && !client.is_confirmed && client.whatsapp_number !== 'Sur place') {
           await autoNotify(client);
@@ -324,6 +336,7 @@ export default function Dashboard() {
           shouldPlaySound = true;
           confirmedIds.current.add(customer.id); 
         }
+
         if (customer.alerted_at && !customer.is_confirmed && !timers[customer.id]) {
           const elapsed = Math.floor((new Date().getTime() - new Date(customer.alerted_at).getTime()) / 1000);
           let remaining = 600 - elapsed;
@@ -339,6 +352,7 @@ export default function Dashboard() {
 
       setQueue(activeClients as Customer[]);
       setFrozenQueue(frozenClients as Customer[]);
+      
       queueRef.current = activeClients as Customer[];
       if (activeClients.length > 0) {
         triggerSlidingWindow(activeClients as Customer[], staffRef.current);
@@ -400,7 +414,6 @@ export default function Dashboard() {
       setIsOpen(barber.is_open ?? true); 
       setLocation(barber.location || '');
       setProfileImage(barber.profile_image_url || '');
-
       if (barber.client_notes) {
         setClientNotes(barber.client_notes);
       } else {
@@ -409,7 +422,6 @@ export default function Dashboard() {
           try { setClientNotes(JSON.parse(localNotes)); } catch {}
         }
       }
-
       if (barber.working_hours) {
         setWorkingHours({ ...DEFAULT_WORKING_HOURS, ...barber.working_hours });
       } else {
@@ -445,6 +457,7 @@ export default function Dashboard() {
       const fileName = `${barberId}-service-${Date.now()}.webp`;
 
       const { error: uploadError } = await supabase.storage.from('service_images').upload(fileName, webpBlob, { contentType: 'image/webp' });
+
       if (uploadError) throw new Error(uploadError.message);
 
       const { data: { publicUrl } } = supabase.storage.from('service_images').getPublicUrl(fileName);
@@ -846,7 +859,9 @@ export default function Dashboard() {
       .replace(/^-+|-+$/g, '');
 
   const shopSlug = shopName ? toSlug(shopName) : ownerName ? toSlug(ownerName) : barberId;
-  const shareLink = origin && shopSlug ? `${origin}/${shopSlug}` : '';
+  const RESERVED_SLUGS = ['admin', 'login', 'signup', 'screen', 'analytics', 'client', 'dashboard', 'api', 'forgot-password', 'reset-password'];
+  const isReserved = RESERVED_SLUGS.includes(shopSlug?.toLowerCase() || '');
+  const shareLink = origin && shopSlug ? (isReserved ? `${origin}/q/${barberId}` : `${origin}/q/${shopSlug}`) : '';
   const qrCodeUrl = shareLink ? `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(shareLink)}&color=0f172a&bgcolor=ffffff` : '';
   const staffPortalLink = origin && barberId ? `${origin}/staff/${barberId}` : '';
 
@@ -996,9 +1011,9 @@ export default function Dashboard() {
       return c.name.toLowerCase().includes(q) || c.phone.toLowerCase().includes(q) || note.includes(q);
     });
   })();
-
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative font-sans selection:bg-amber-200">
+      
       <div className="min-h-[25vh] pt-12 pb-8 w-full bg-slate-900 relative flex flex-col justify-center px-6 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black"></div>
         
@@ -1043,6 +1058,14 @@ export default function Dashboard() {
               </div>
             )}
 
+            <button
+              onClick={toggleLanguage}
+              className="h-9 px-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-full flex items-center gap-1.5 text-white text-xs font-bold active:scale-95 transition-all backdrop-blur-md shadow-sm"
+              title="Changer de langue / Switch language"
+            >
+              <Globe className="w-3.5 h-3.5 text-amber-400" />
+              <span className="font-mono uppercase">{lang === 'fr' ? 'EN 🇬🇧' : 'FR 🇫🇷'}</span>
+            </button>
             <button onClick={handleLogout} className="w-10 h-10 shrink-0 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-slate-300 hover:text-white active:scale-95 transition-all backdrop-blur-md" title="Déconnexion">
               <LogOut className="w-4 h-4" />
             </button>
@@ -1068,6 +1091,7 @@ export default function Dashboard() {
       </div>
 
       <div className="flex-1 bg-slate-50 rounded-t-[2.5rem] -mt-8 relative z-20 px-4 sm:px-6 pt-6 pb-28 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
+
         {activeTab === 'queue' && (
           <div className="animate-in fade-in duration-300">
             <div className="flex justify-between items-end mb-4 px-2">
@@ -1077,7 +1101,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* AUDIO AWAKENING BANNER */}
             {!soundEnabled && (
               <div className="mb-4 bg-gradient-to-r from-amber-500/15 via-amber-400/10 to-transparent border border-amber-500/30 p-3.5 rounded-2xl flex items-center justify-between gap-3 shadow-sm animate-in fade-in slide-in-from-top-2">
                 <div className="flex items-center gap-3 min-w-0">
@@ -1133,8 +1156,10 @@ export default function Dashboard() {
                   <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                     {activeStaff.map(member => {
                       const memberQueue = queue.filter(q => q.staff_id === member.id);
+                      
                       return (
                         <div key={member.id} className="bg-white border border-slate-100 rounded-[2rem] p-4 shadow-sm h-fit">
+                          
                           <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-3">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
@@ -1148,7 +1173,9 @@ export default function Dashboard() {
                           </div>
 
                           {memberQueue.length === 0 ? (
-                            <div className="py-6 text-center text-slate-400 text-sm font-medium">Fauteuil libre</div>
+                            <div className="py-6 text-center text-slate-400 text-sm font-medium">
+                              Fauteuil libre
+                            </div>
                           ) : (
                             <div className="space-y-3">
                               {memberQueue.map((customer, index) => {
@@ -1189,7 +1216,6 @@ export default function Dashboard() {
                                           <span className="truncate">{clientNotes[getClientKey(displayName, displayPhone)]}</span>
                                         </div>
                                       )}
-
                                       {customer.queue_services && customer.queue_services.length > 0 && (
                                         <div className="flex flex-wrap gap-1 mt-3 relative z-10">
                                           {customer.queue_services.map((qs, i) => qs.services && (
@@ -1238,6 +1264,7 @@ export default function Dashboard() {
                                             ) : (
                                               <span className="text-slate-500 font-mono text-[11px]">{displayPhone}</span>
                                             )}
+                                            
                                             {isConfirmed && (
                                               <span className="flex items-center text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">
                                                 <CheckCircle2 className="w-2.5 h-2.5 mr-0.5" /> En route
@@ -1370,7 +1397,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* CARNET CLIENTS TAB */}
         {activeTab === 'clients' && (
           <div className="animate-in fade-in duration-300">
             <div className="flex justify-between items-end mb-4 px-2">
@@ -1507,14 +1533,12 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* SETTINGS TAB */}
         {activeTab === 'settings' && (
           <div className="animate-in fade-in slide-in-from-right-4 duration-300">
             <h2 className="text-2xl font-black text-slate-900 mb-6 tracking-tight flex items-center gap-2 px-2">
               <Settings className="w-6 h-6 text-slate-400" /> Paramètres
             </h2>
 
-            {/* SHOP IDENTITY */}
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
               <div className="flex items-center gap-2 mb-4">
                 <Store className="w-5 h-5 text-blue-500" />
@@ -1551,7 +1575,6 @@ export default function Dashboard() {
               </form>
             </div>
 
-            {/* WEEKLY OPENING HOURS */}
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -1623,7 +1646,6 @@ export default function Dashboard() {
               </button>
             </div>
 
-            {/* SERVICES SETUP */}
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
               <div className="flex items-center gap-2 mb-4">
                 <Scissors className="w-5 h-5 text-amber-500" />
@@ -1684,7 +1706,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* TEAM & STAFF ACCREDITATION */}
             <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
               <div className="flex items-center gap-2 mb-4">
                 <User className="w-5 h-5 text-emerald-500" />
@@ -1735,16 +1756,16 @@ export default function Dashboard() {
                   <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Lien Portail Staff</h5>
                   <button onClick={() => copyToClipboard(staffPortalLink)} className="w-full h-10 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-all flex items-center justify-center gap-2 border border-slate-200 text-xs">
                     {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-                    {copied ? 'Lien Copié !' : "Copier le lien pour l'iPad / Employés"}
+                    {copied ? 'Lien Copié !' : 'Copier le lien pour l\'iPad / Employés'}
                   </button>
                 </div>
               )}
             </div>
 
-            {/* MARKETING & QR CARD */}
             {!isLoading && shareLink && (
               <div className="bg-slate-900 p-6 rounded-3xl shadow-xl relative overflow-hidden group mb-6">
                 <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
+                
                 <div className="flex items-center gap-5 relative z-10 mb-6">
                   <div className="bg-white p-2 rounded-2xl shadow-lg shrink-0">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1778,10 +1799,10 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
+            
           </div>
         )}
 
-        {/* WALK-IN MODAL */}
         {showWalkInModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-[2rem] w-full max-w-sm p-6 sm:p-8 pb-12 sm:pb-12 shadow-2xl relative animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
@@ -1842,9 +1863,9 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
       </div>
 
-      {/* BOTTOM NAVIGATION BAR */}
       <div className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-200 flex items-center justify-around z-40 px-2 pb-safe">
         <button 
           onClick={() => setActiveTab('queue')} 
@@ -1853,7 +1874,7 @@ export default function Dashboard() {
           <LayoutList className="w-5 h-5" />
           <span className="text-[9px] font-black mt-1 uppercase tracking-wider">File</span>
         </button>
-
+        
         <button 
           onClick={() => { setActiveTab('clients'); if (barberId) fetchSettingsData(barberId); }} 
           className={`flex flex-col items-center justify-center w-20 transition-colors ${activeTab === 'clients' ? 'text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
@@ -1861,7 +1882,7 @@ export default function Dashboard() {
           <Users className="w-5 h-5" />
           <span className="text-[9px] font-black mt-1 uppercase tracking-wider">Clients</span>
         </button>
-        
+
         <Link 
           href="/analytics" 
           className="flex flex-col items-center justify-center w-20 transition-colors text-slate-400 hover:text-slate-600"
@@ -1878,6 +1899,7 @@ export default function Dashboard() {
           <span className="text-[9px] font-black mt-1 uppercase tracking-wider">Réglages</span>
         </button>
       </div>
+
     </div>
   );
 }
