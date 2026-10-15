@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { LogOut, Scissors, MapPin, Timer, CheckCircle2, AlertCircle, X, Store, QrCode, Camera, Clock, Star, Award, User, Snowflake, Globe, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { Home, LogOut, Scissors, MapPin, Timer, CheckCircle2, AlertCircle, X, Store, QrCode, Camera, Clock, Star, Award, User, Snowflake, Globe, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { Scanner } from '@yudiel/react-qr-scanner';
 
 const translations = {
@@ -506,7 +506,8 @@ export default function ClientDashboard() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push('/client/login');
+    if (typeof window !== 'undefined') localStorage.removeItem('noubba_ticket_id');
+    router.push('/');
   };
 
   const subscribeToPush = async () => {
@@ -660,27 +661,36 @@ export default function ClientDashboard() {
   const handleScanSuccess = async (result: any) => {
     if (!result) return;
     
-    let url = '';
+    let rawText = '';
     
     if (Array.isArray(result) && result.length > 0) {
-      url = result[0]?.rawValue || (typeof result[0] === 'string' ? result[0] : '');
+      rawText = result[0]?.rawValue || (typeof result[0] === 'string' ? result[0] : '');
     } else if (typeof result === 'object' && result !== null && result.rawValue) {
-      url = result.rawValue;
+      rawText = result.rawValue;
     } else if (typeof result === 'string') {
-      url = result;
+      rawText = result;
     }
 
-    if (!url) return;
+    if (!rawText) return;
+    const clean = rawText.trim();
 
-    if (url.includes('/q/')) {
+    // Support ANY Noubba URL: vanity slug (noubba.com/barber-slug), /q/[id], or relative path
+    let target = '';
+    if (clean.startsWith('http://') || clean.startsWith('https://')) {
+      target = clean;
+    } else if (clean.startsWith('/')) {
+      target = window.location.origin + clean;
+    } else if (clean.length > 0) {
+      target = window.location.origin + '/' + clean;
+    }
+
+    if (target) {
       setShowScanner(false);
       const toastId = toast.loading(t.scanSuccess);
       await subscribeToPush(); 
-      window.location.href = url;
+      window.location.href = target;
     } else {
-      if (url.trim().length > 0 && url.includes('http')) {
-        toast.error(t.scanInvalid, { id: 'qr-error' });
-      }
+      toast.error(t.scanInvalid, { id: 'qr-error' });
     }
   };
 
@@ -782,8 +792,12 @@ export default function ClientDashboard() {
               <Globe className="w-3.5 h-3.5 text-amber-400" />
               <span className="font-mono uppercase">{lang === 'fr' ? 'EN 🇬🇧' : 'FR 🇫🇷'}</span>
             </button>
-            <button onClick={handleLogout} className="w-10 h-10 shrink-0 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-slate-300 hover:text-white active:scale-95 transition-all backdrop-blur-md">
-              <LogOut className="w-4 h-4" />
+            <button 
+              onClick={handleLogout} 
+              className="w-10 h-10 shrink-0 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-slate-300 hover:text-white active:scale-95 transition-all backdrop-blur-md"
+              title="Retour à l'accueil"
+            >
+              <Home className="w-4 h-4" />
             </button>
           </div>
         </div>
